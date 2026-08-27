@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0a1d61" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Pip's Big Garden Munch</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/img/icon-192.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main id="stage" class="stage" aria-label="Pip's Big Garden Munch storybook">
+
+    <!-- The world: your drawing + everything that lives inside it. The "camera" zooms this. -->
+    <div id="world" class="world">
+      <div id="bg" class="bg"></div>
+      <div id="decor" class="decor"></div>
+      <section id="page" class="page"></section>
+    </div>
+
+    <div class="vignette"></div>
+
+    <!-- Reaction bubble ("Too sour!") -->
+    <div id="bubble" class="bubble"></div>
+
+    <!-- Caption -->
+    <div id="caption" class="caption" aria-live="polite"></div>
+    <div id="pagenum" class="pagenum"></div>
+
+    <!-- Controls -->
+    <button id="btn-replay" class="ctl ctl-replay" aria-label="Read it again" title="Read again">
+      <svg viewBox="0 0 100 100"><path d="M20 38 h18 l22 -18 v60 l-22 -18 h-18 z"/><path class="wave" d="M70 35 q14 15 0 30"/><path class="wave" d="M78 25 q24 25 0 50"/></svg>
+    </button>
+    <button id="btn-back" class="ctl ctl-back" aria-label="Previous page" title="Back">
+      <svg viewBox="0 0 100 100"><path d="M68 18 L30 50 L68 82 Z"/></svg>
+    </button>
+    <button id="btn-full" class="ctl ctl-full" aria-label="Full screen" title="Full screen">
+      <svg viewBox="0 0 100 100"><path d="M15 40 V15 H40 M60 15 H85 V40 M85 60 V85 H60 M40 85 H15 V60"/></svg>
+    </button>
+    <button id="btn-next" class="ctl ctl-next" aria-label="Next page" title="Next">
+      <span class="ring"></span>
+      <img src="assets/img/arrow.png" alt="" draggable="false" />
+    </button>
+    <div id="dots" class="dots" aria-hidden="true"></div>
+
+    <!-- Splash. The one tap that unlocks sound on phones and tablets. -->
+    <div id="splash" class="splash">
+      <div class="splash-stars"></div>
+      <div class="splash-card">
+        <img class="splash-cat" src="assets/img/caterpillar.png" alt="" draggable="false" />
+        <h1><span>Pip's Big</span><span>Garden Munch</span></h1>
+        <p class="splash-sub">a tap-along story from a windy Wellington garden</p>
+        <button id="btn-start" class="start">Tap to begin</button>
+      </div>
+    </div>
+
+    <div id="fx" class="fx" aria-hidden="true"></div>
+  </main>
+
+  <script src="js/audio.js"></script>
+  <script src="js/story.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>
