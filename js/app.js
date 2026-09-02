@@ -1,255 +1,503 @@
-/* ==========================================================================
-   Storybook engine v2 — reads STORY (story.js) and runs the book.
-   Edit story.js to change the book; this file rarely needs changes.
-   ========================================================================== */
+/* ============================================================
+   app.js — storybook engine
+   Renders pages from STORY, handles taps, narration
+   highlighting, camera, atmosphere and page turns.
+   ============================================================ */
+
 (() => {
-  const $ = (s) => document.querySelector(s);
-  const stage = $('#stage'), world = $('#world'), bg = $('#bg'), decor = $('#decor'), pageEl = $('#page');
-  const cap = $('#caption'), bubble = $('#bubble'), pagenum = $('#pagenum');
-  const btnBack = $('#btn-back'), btnNext = $('#btn-next'), btnReplay = $('#btn-replay'), btnFull = $('#btn-full');
-  const dots = $('#dots'), splash = $('#splash'), fx = $('#fx');
+  const $ = (sel) => document.querySelector(sel);
 
-  let index = -1, state = null, hintTimer = null, uid = 0, cam = { zoom: 1, x: 50, y: 50 };
+  const world     = $('#world');
+  const sprites   = $('#sprites');
+  const atmo      = $('#atmosphere');
+  const fx        = $('#fx');
+  const nightImg  = $('#scene-night');
+  const dayImg    = $('#scene-day');
+  const caption   = $('#caption');
+  const capText   = $('#caption-text');
+  const arrowBtn  = $('#arrow-btn');
+  const splash    = $('#splash');
+  const beginBtn  = $('#begin-btn');
+  const turner    = $('#turner');
+  const stage     = $('#stage');
 
-  /* ---------- Boot ------------------------------------------------------ */
-  STORY.pages.forEach(() => dots.appendChild(document.createElement('i')));
-  sprinkleStars($('.splash-stars'), 60, 'i');
+  let pageIndex = -1;          // -1 = splash
+  let narrTimer = null;
+  let idleTimer = null;
+  let pendingTappables = [];   // sprites that still want attention (for hints)
+  let arrowArmed = false;
 
-  $('#btn-start').addEventListener('click', async () => {
-    try { await Sound.unlock(); } catch (e) {}
-    splash.classList.add('gone');
-    go(0);
-  });
-  btnNext.addEventListener('click', () => go(STORY.pages[index].last ? 0 : index + 1));
-  btnBack.addEventListener('click', () => go(index - 1));
-  btnReplay.addEventListener('click', () => narrateCurrent());
-  btnFull.addEventListener('click', () => {
-    const el = document.documentElement;
-    try {
-      if (!document.fullscreenElement) (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
-      else (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    } catch (e) {}
-  });
-  document.addEventListener('keydown', (e) => {
-    if (index < 0) return;
-    if (e.key === 'ArrowRight' && !btnNext.classList.contains('locked')) btnNext.click();
-    if (e.key === 'ArrowLeft') btnBack.click();
-    if (e.key === ' ') { e.preventDefault(); narrateCurrent(); }
-  });
+  /* ================= Scene & atmosphere ================= */
 
-  /* ---------- Navigation -------------------------------------------------- */
-  function go(n) {
-    if (n < 0 || n >= STORY.pages.length) return;
-    Sound.stop(); clearTimeout(hintTimer);
-    bubble.classList.remove('show');
-    const leaving = index >= 0;
-    pageEl.classList.add('leaving');
-    cap.style.opacity = 0; cap.style.animation = 'none';
-
-    setTimeout(() => {
-      index = n;
-      const page = STORY.pages[n];
-      state = { hits: {}, completed: 0, done: page.task === 0 };
-
-      setBackground(page.bg);
-      setCamera(page.cam || { zoom: 1, x: 50, y: 50 });
-      setDecor(page.bg);
-
-      pageEl.classList.remove('leaving');
-      pageEl.innerHTML = '';
-      page.items.forEach((item) => pageEl.appendChild(renderItem(item)));
-
-      setCaption(page.text);
-      narrateCurrent();
-
-      btnBack.classList.toggle('hidden', n === 0);
-      btnNext.classList.toggle('locked', !state.done);
-      btnNext.title = page.last ? 'Read it again' : 'Next';
-      pagenum.textContent = n + 1;
-      [...dots.children].forEach((d, i) => { d.classList.toggle('on', i === n); d.classList.toggle('seen', i < n); });
-      scheduleHint();
-    }, leaving ? 450 : 0);
-  }
-
-  function setBackground(kind) {
-    if (bg.classList.contains(kind)) return;
-    if (!/night|day/.test(bg.className)) { bg.className = `bg ${kind}`; return; }
-    bg.style.setProperty('--next-bg', `url("assets/img/scene-${kind}.jpg")`);
-    bg.classList.add('fading');
-    setTimeout(() => { bg.className = `bg ${kind}`; bg.style.removeProperty('--next-bg'); }, 1450);
-  }
-
-  // The camera zooms the whole drawing (and everything on it) toward a point.
-  function setCamera(c) {
-    cam = c;
-    world.style.setProperty('--zoom', c.zoom);
-    world.style.setProperty('--cx', c.x + '%');
-    world.style.setProperty('--cy', c.y + '%');
-  }
-  // Drawing coordinates -> screen coordinates (for the speech bubble)
-  function toScreen(x, y) {
-    return { x: cam.x + (x - cam.x) * cam.zoom, y: cam.y + (y - cam.y) * cam.zoom };
-  }
-
-  /* ---------- Atmosphere ------------------------------------------------- */
-  function setDecor(kind) {
-    if (decor.dataset.kind === kind) return;
-    decor.dataset.kind = kind; decor.innerHTML = '';
-    if (kind === 'night') {
-      const g = document.createElement('div'); g.className = 'moonglow'; decor.appendChild(g);
-      sprinkleStars(decor, 70, 'i', 'star', 0, 30);          // only in the sky, above the hills
-      for (let i = 0; i < 7; i++) {
-        const f = document.createElement('i'); f.className = 'firefly';
-        f.style.left = 15 + Math.random() * 70 + '%'; f.style.top = 50 + Math.random() * 30 + '%';
-        f.style.setProperty('--d', 7 + Math.random() * 6 + 's'); f.style.animationDelay = -Math.random() * 8 + 's';
-        decor.appendChild(f);
+  function showScene(name, crossfade) {
+    if (name === 'day') {
+      if (crossfade) {
+        nightImg.style.opacity = 1;
+        dayImg.style.opacity = 0;
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            nightImg.style.opacity = 0;
+            dayImg.style.opacity = 1;
+          }));
+      } else {
+        nightImg.style.opacity = 0;
+        dayImg.style.opacity = 1;
       }
     } else {
-      const r = document.createElement('div'); r.className = 'rays'; decor.appendChild(r);
-      const g = document.createElement('div'); g.className = 'sunglow'; decor.appendChild(g);
-      [[4, 8, 95, .9], [22, 22, 140, .7], [66, 6, 120, 1.1]].forEach(([left, top, dur, size], i) => {
-        const c = document.createElement('div'); c.className = 'cloud';
-        c.style.left = left + '%'; c.style.top = top + '%'; c.style.width = 12 * size + '%';
-        c.style.setProperty('--d', dur + 's'); c.style.animationDelay = -(i * 37) + 's';
-        c.innerHTML = SHAPES.cloud; decor.appendChild(c);
-      });
-    }
-  }
-  function sprinkleStars(parent, n, tag, cls = '', top0 = 0, top1 = 100) {
-    for (let i = 0; i < n; i++) {
-      const s = document.createElement(tag); if (cls) s.className = cls + (Math.random() < .15 ? ' big' : '');
-      s.style.left = Math.random() * 100 + '%'; s.style.top = top0 + Math.random() * (top1 - top0) + '%';
-      s.style.animationDelay = -Math.random() * 3 + 's'; s.style.animationDuration = 1.8 + Math.random() * 2 + 's';
-      parent.appendChild(s);
+      nightImg.style.opacity = 1;
+      dayImg.style.opacity = 0;
     }
   }
 
-  /* ---------- Objects ------------------------------------------------------ */
-  function renderItem(item) {
-    const el = document.createElement('div');
-    el.className = 'obj' + (item.tap ? ' tap' : '') + (item.idle ? ` idle-${item.idle}` : '') + (item.flip ? ' flip' : '');
-    el.dataset.id = item.id;
-    el.style.left = item.x + '%'; el.style.top = item.y + '%'; el.style.width = item.w + '%';
-    if (item.kind === 'img') {
-      const img = document.createElement('img'); img.src = item.src; img.alt = ''; img.draggable = false; el.appendChild(img);
+  function buildAtmosphere(scene) {
+    atmo.innerHTML = '';
+    if (scene === 'night') {
+      // twinkling stars (kept in the sky band)
+      for (let i = 0; i < 26; i++) {
+        const s = document.createElement('div');
+        s.className = 'twinkle';
+        s.style.left = (Math.random() * 96 + 2) + '%';
+        s.style.top  = (Math.random() * 34 + 2) + '%';
+        s.style.animationDelay = (Math.random() * 2.6) + 's';
+        s.style.animationDuration = (2 + Math.random() * 2.4) + 's';
+        atmo.appendChild(s);
+      }
+      // fireflies drifting low over the leaf
+      for (let i = 0; i < 6; i++) {
+        const f = document.createElement('div');
+        f.className = 'firefly';
+        f.style.left = (Math.random() * 80 + 8) + '%';
+        f.style.top  = (Math.random() * 30 + 58) + '%';
+        f.style.animationDelay = (Math.random() * 6) + 's, ' + (Math.random() * 2.1) + 's';
+        f.style.animationDuration = (9 + Math.random() * 6) + 's, ' + (1.6 + Math.random() * 1.2) + 's';
+        atmo.appendChild(f);
+      }
     } else {
-      el.innerHTML = SHAPES[item.shape].replace(/__ID__/g, `${item.id}-${uid++}`);
+      // sun glow + slowly rotating rays centred on the drawn sun
+      const cx = 50.8, cy = 23.6;             // sun centre (% of scene)
+      const glow = document.createElement('div');
+      glow.className = 'sun-glow';
+      glow.style.width = '34%';
+      glow.style.aspectRatio = '1';
+      glow.style.left = (cx - 17) + '%';
+      glow.style.top  = (cy - 17 * (1316 / 924)) * 1 + '%';
+      // aspect-ratio keeps it circular relative to width; nudge with translate
+      glow.style.transform = 'translateY(-6%)';
+      atmo.appendChild(glow);
+
+      const rays = document.createElement('div');
+      rays.className = 'sun-rays';
+      rays.style.width = '52%';
+      rays.style.aspectRatio = '1';
+      rays.style.left = (cx - 26) + '%';
+      rays.style.top  = (cy - 26 * (1316 / 924)) + '%';
+      atmo.appendChild(rays);
+
+      // drifting clouds — simple flat SVG blobs in the book's style
+      const cloudSvg = (w) => `
+        <svg viewBox="0 0 220 90" width="${w}" xmlns="http://www.w3.org/2000/svg">
+          <g fill="#ffffff" stroke="#23315f" stroke-width="4" stroke-linejoin="round" opacity="0.92">
+            <ellipse cx="60" cy="58" rx="52" ry="26"/>
+            <ellipse cx="120" cy="44" rx="46" ry="30"/>
+            <ellipse cx="168" cy="60" rx="44" ry="22"/>
+          </g>
+        </svg>`;
+      [[2, '10%', 130, 70], [30, '4%', 170, 95], [58, '15%', 110, 120]]
+        .forEach(([left, top, w, dur], i) => {
+          const c = document.createElement('div');
+          c.className = 'cloud';
+          c.style.left = left + '%';
+          c.style.top = top;
+          c.style.animationDuration = dur + 's';
+          c.style.animationDelay = (-i * 22) + 's';
+          c.innerHTML = cloudSvg(w);
+          atmo.appendChild(c);
+        });
     }
-    if (item.tap) el.addEventListener('pointerdown', (e) => onTap(item, el, e), { passive: true });
+  }
+
+  /* ================= Camera ================= */
+
+  function setCamera(cam, instant) {
+    if (instant) world.style.transition = 'none';
+    world.style.transformOrigin = cam ? cam.origin : '50% 50%';
+    world.style.transform = cam ? `scale(${cam.scale})` : 'none';
+    if (instant) requestAnimationFrame(() => { world.style.transition = ''; });
+  }
+
+  /* ================= Sparkles ================= */
+
+  function sparkleBurst(clientX, clientY, color) {
+    const rect = stage.getBoundingClientRect();
+    const x = clientX - rect.left, y = clientY - rect.top;
+    for (let i = 0; i < 12; i++) {
+      const s = document.createElement('div');
+      s.className = 'spark';
+      s.style.color = color || '#ffe98a';
+      s.style.left = x + 'px';
+      s.style.top = y + 'px';
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 40 + Math.random() * 70;
+      s.style.setProperty('--dx', Math.cos(ang) * dist + 'px');
+      s.style.setProperty('--dy', Math.sin(ang) * dist - 20 + 'px');
+      s.style.width = s.style.height = (7 + Math.random() * 9) + 'px';
+      s.style.animationDelay = (Math.random() * 0.08) + 's';
+      stage.appendChild(s);
+      setTimeout(() => s.remove(), 1000);
+    }
+    Sfx.sparkle();
+  }
+
+  /* ============ Narration: read-aloud + synced highlighting ============ */
+
+  let fallbackTimer = null;
+  let safetyTimer = null;
+  let speechUtterance = null;
+  let chosenVoice = null;
+  let lastNarration = null;      // for tap-to-replay on the caption
+
+  function pickVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    const vs = speechSynthesis.getVoices();
+    if (!vs.length) return null;
+    const prefs = ['en-nz', 'en-gb', 'en-au', 'en-us', 'en'];
+    for (const p of prefs) {
+      const norm = (v) => v.lang.toLowerCase().replace('_', '-');
+      const local = vs.find(v => norm(v).startsWith(p) && v.localService);
+      if (local) return local;
+      const any = vs.find(v => norm(v).startsWith(p));
+      if (any) return any;
+    }
+    return vs[0];
+  }
+  if ('speechSynthesis' in window) {
+    chosenVoice = pickVoice();
+    speechSynthesis.onvoiceschanged = () => { chosenVoice = pickVoice(); };
+  }
+
+  function stopNarration() {
+    clearInterval(narrTimer);   narrTimer = null;
+    clearTimeout(fallbackTimer); fallbackTimer = null;
+    clearTimeout(safetyTimer);   safetyTimer = null;
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    speechUtterance = null;
+  }
+
+  function narrate(text, done) {
+    stopNarration();
+    lastNarration = { text, done };
+    caption.classList.remove('hidden');
+
+    // word spans + each word's character offset within `text`
+    const tokens = text.split(/\s+/);
+    capText.innerHTML = tokens.map(w => `<span class="w">${w}</span>`).join(' ');
+    const words = [...capText.querySelectorAll('.w')];
+    const starts = [];
+    let pos = 0;
+    tokens.forEach(t => {
+      const idx = text.indexOf(t, pos);
+      starts.push(idx);
+      pos = idx + t.length;
+    });
+
+    const isWordy = (el) => /[\p{L}\p{N}]/u.test(el.textContent);
+    const light = (i) => {
+      words.forEach(w => w.classList.remove('lit'));
+      if (i >= 0 && i < words.length) words[i].classList.add('lit');
+    };
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      stopNarration();
+      words.forEach(w => w.classList.remove('lit'));
+      if (done) done();
+    };
+
+    // timed highlighting — the fallback, and the pacer when the voice
+    // plays but the browser gives no word-boundary events
+    const startTimedHighlight = (finishWhenDone) => {
+      clearInterval(narrTimer);
+      let i = 0;
+      narrTimer = setInterval(() => {
+        while (i < words.length && !isWordy(words[i])) i++;
+        if (i >= words.length) {
+          clearInterval(narrTimer);
+          if (finishWhenDone) finish();
+          return;
+        }
+        light(i); i++;
+      }, 330);
+    };
+
+    // MP3 hook: drop files at assets/audio/<pageId>.mp3 and, when present,
+    // play them here with startTimedHighlight(false) + finish() on 'ended'.
+
+    if (!('speechSynthesis' in window)) { startTimedHighlight(true); return; }
+
+    const u = new SpeechSynthesisUtterance(text);
+    speechUtterance = u;
+    if (!chosenVoice) chosenVoice = pickVoice();
+    if (chosenVoice) { u.voice = chosenVoice; u.lang = chosenVoice.lang; }
+    u.rate = 0.88;    // gentle storytime pace
+    u.pitch = 1.05;
+
+    let sawBoundary = false;
+    u.onboundary = (e) => {
+      if (e.name && e.name !== 'word') return;
+      sawBoundary = true;
+      clearInterval(narrTimer);          // real boundaries beat the pacer
+      let i = starts.findIndex((s, k) =>
+        e.charIndex >= s && e.charIndex < s + tokens[k].length + 1);
+      if (i === -1) i = starts.filter(s => s <= e.charIndex).length - 1;
+      if (i >= 0 && isWordy(words[i])) light(i);
+    };
+    u.onend = () => { if (speechUtterance === u) finish(); };
+    u.onerror = () => { if (speechUtterance === u) startTimedHighlight(true); };
+
+    speechSynthesis.cancel();            // clear any stuck queue (Chrome quirk)
+    try {
+      speechSynthesis.speak(u);
+    } catch (err) {
+      startTimedHighlight(true);
+      return;
+    }
+
+    // watchdog: no boundary events after 1.1s → pace highlights on a timer;
+    // if the voice never actually started, the timer also ends the page
+    fallbackTimer = setTimeout(() => {
+      if (!sawBoundary && !finished) {
+        const speaking = speechSynthesis.speaking || speechSynthesis.pending;
+        startTimedHighlight(!speaking);
+      }
+    }, 1100);
+
+    // absolute safety net so the arrow can never get stuck
+    safetyTimer = setTimeout(finish, tokens.length * 600 + 6000);
+  }
+
+  // tap the caption to hear the page again
+  caption.addEventListener('pointerdown', () => {
+    if (lastNarration) narrate(lastNarration.text, lastNarration.done);
+  });
+
+  /* ================= Arrow ================= */
+
+  function disarmArrow() {
+    arrowArmed = false;
+    arrowBtn.disabled = true;
+    arrowBtn.classList.remove('hidden');
+  }
+  function armArrow() {
+    if (arrowArmed) return;
+    arrowArmed = true;
+    arrowBtn.disabled = false;
+    Sfx.chime();
+  }
+
+  /* ================= Idle hints ================= */
+
+  function resetIdleHint() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      pendingTappables.forEach(el => {
+        el.classList.remove('anim-hint');
+        void el.offsetWidth;
+        el.classList.add('anim-hint');
+      });
+      resetIdleHint();
+    }, 5000);
+  }
+
+  /* ================= Page rendering ================= */
+
+  function makeSprite(obj) {
+    const el = document.createElement('div');
+    el.className = 'sprite';
+    el.id = 'obj-' + obj.id;
+    Object.assign(el.style, obj.rect);
+    const img = document.createElement('img');
+    img.src = obj.img;
+    img.alt = '';
+    el.appendChild(img);
+    if (obj.hiddenAtStart) el.style.opacity = 0;
+    if (obj.breathe && !obj.hiddenAtStart) el.classList.add('anim-breathe');
     return el;
   }
 
-  function onTap(item, el, e) {
-    const t = item.tap;
-    clearTimeout(hintTimer); scheduleHint();
-    sparkle(e.clientX, e.clientY);
-
-    animate(el, t.anim);
-    Sound.sfx(t.sfx || 'tap');
-    if (t.bite) el.classList.add('bitten');
-    if (t.grow) el.style.setProperty('--s', (parseFloat(el.style.getPropertyValue('--s') || 1) * t.grow).toFixed(3));
-    if (t.fly) { el.classList.remove('idle-flap'); el.classList.add('anim-fly'); }
-    if (t.say) setTimeout(() => Sound.say(t.say, t.sayFile), 120);
-    if (t.then) setTimeout(() => Sound.sfx(t.then), 650);
-
-    const hits = (state.hits[item.id] = (state.hits[item.id] || 0) + 1);
-
-    // Pip lunges at the food, and the reaction bubble appears above Pip
-    let speaker = item;
-    if (t.lunge) {
-      const other = pageEl.querySelector(`[data-id="${t.lunge}"]`);
-      const otherItem = STORY.pages[index].items.find((i) => i.id === t.lunge);
-      if (other) { animate(other, 'lunge'); speaker = otherItem || item; }
-    }
-    if (t.react) {
-      const text = Array.isArray(t.react) ? t.react[Math.min(hits, t.react.length) - 1] : t.react;
-      setTimeout(() => showBubble(text, speaker), t.lunge ? 250 : 60);
-    }
-
-    const need = t.count || 1;
-    if (t.required && hits === need) {
-      state.completed++;
-      if (t.onComplete === 'hatch') hatch(el, item);
-      if (state.completed >= STORY.pages[index].task) completePage();
-    }
-  }
-
-  function animate(el, name) {
-    if (!name) return;
-    const cls = `anim-${name}`;
-    el.classList.remove(cls); void el.offsetWidth;
+  function playAnim(el, cls, after) {
+    el.classList.remove('anim-wobble-sm', 'anim-wobble-lg', 'anim-crack', 'anim-hatch', 'anim-hint');
+    void el.offsetWidth;
     el.classList.add(cls);
-    el.firstElementChild.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+    if (after) el.addEventListener('animationend', after, { once: true });
   }
 
-  function showBubble(text, item) {
-    const s = toScreen(item.x + item.w * 0.15, item.y - item.w * 0.32);
-    bubble.textContent = text;
-    bubble.style.setProperty('--bx', Math.min(80, Math.max(15, s.x)) + '%');
-    bubble.style.setProperty('--by', Math.max(12, s.y) + '%');
-    bubble.classList.remove('show'); void bubble.offsetWidth; bubble.classList.add('show');
+  function glowAt(rectStyles) {
+    const g = document.createElement('div');
+    g.className = 'glow-pulse';
+    // centre a square glow over the hotspot rect, 1.8× its width
+    const l = parseFloat(rectStyles.left), t = parseFloat(rectStyles.top);
+    const w = parseFloat(rectStyles.width), h = parseFloat(rectStyles.height);
+    const gw = w * 1.9;
+    g.style.width = gw + '%';
+    g.style.aspectRatio = '1';
+    g.style.left = (l + w / 2 - gw / 2) + '%';
+    g.style.top = (t + h / 2 - gw / 2 * (1316 / 924)) + '%';
+    fx.appendChild(g);
+    setTimeout(() => g.remove(), 1500);
   }
 
-  function hatch(eggEl, item) {
-    Sound.sfx('pop');
-    const s = toScreen(item.x, item.y); burst(s.x, s.y, 18);
-    eggEl.classList.remove('tap'); eggEl.classList.add('anim-gone');
-    const pip = renderItem({ id: 'pip', kind: 'img', src: 'assets/img/caterpillar.png', x: item.x + 4, y: item.y - 2, w: 18, idle: 'breathe',
-      tap: { anim: 'wiggle', sfx: 'tap', say: "Hello! I'm Pip.", react: "Hi, I'm Pip!" } });
-    pip.style.animation = 'none'; pip.style.opacity = 1; pip.classList.add('anim-hatch');
-    setTimeout(() => pageEl.appendChild(pip), 350);
+  function loadPage(idx) {
+    const page = STORY.pages[idx];
+    pageIndex = idx;
+    pendingTappables = [];
+    sprites.innerHTML = '';
+    fx.innerHTML = '';
+    disarmArrow();
+
+    showScene(page.scene, !!page.crossfadeFrom);
+    buildAtmosphere(page.scene);
+    setCamera(page.camera, true);
+
+    /* ---- objects ---- */
+    const els = {};
+    (page.objects || []).forEach(obj => {
+      const el = makeSprite(obj);
+      els[obj.id] = { el, obj };
+      sprites.appendChild(el);
+    });
+
+    /* ---- generic taps ---- */
+    (page.objects || []).forEach(obj => {
+      const { el } = els[obj.id];
+      if (!obj.tap) return;
+      el.classList.add('tappable');
+      if (obj.tap.effect !== 'hatch') pendingTappables.push(el);
+
+      if (obj.tap.effect === 'wobble') {
+        el.addEventListener('pointerdown', (e) => {
+          playAnim(el, 'anim-wobble-sm');
+          Sfx.wobble(1);
+          sparkleBurst(e.clientX, e.clientY, obj.tap.sparkColor);
+          pendingTappables = pendingTappables.filter(p => p !== el);
+          resetIdleHint();
+        });
+      }
+
+      if (obj.tap.effect === 'hatch') {
+        let taps = 0;
+        pendingTappables.push(el);
+        el.addEventListener('pointerdown', (e) => {
+          if (taps >= obj.tap.tapsNeeded) return;
+          taps++;
+          resetIdleHint();
+          if (taps < obj.tap.tapsNeeded) {
+            playAnim(el, taps === 1 ? 'anim-wobble-sm' : 'anim-wobble-lg');
+            Sfx.wobble(taps);
+            sparkleBurst(e.clientX, e.clientY, '#fff3b0');
+          } else {
+            // --- the big POP ---
+            pendingTappables = pendingTappables.filter(p => p !== el);
+            Sfx.crackPop();
+            sparkleBurst(e.clientX, e.clientY, '#ffd94d');
+            sparkleBurst(e.clientX + 20, e.clientY - 10, '#ffffff');
+            playAnim(el, 'anim-crack', () => { el.style.display = 'none'; });
+
+            const cat = els['caterpillar'];
+            setTimeout(() => {
+              cat.el.style.opacity = 1;
+              playAnim(cat.el, 'anim-hatch', () => {
+                cat.el.classList.add('anim-breathe');
+              });
+              Sfx.boing();
+            }, 380);
+
+            // camera pulls back, caption swaps, arrow enables
+            setTimeout(() => {
+              if (page.cameraAfter) setCamera(page.cameraAfter, false);
+              if (page.afterText) narrate(page.afterText, armArrow);
+              else armArrow();
+              stage.dispatchEvent(new CustomEvent('storyevent', { detail: 'hatched' }));
+            }, 1100);
+          }
+        });
+      }
+    });
+
+    /* ---- hotspots (tappable regions on the background art) ---- */
+    (page.hotspots || []).forEach(h => {
+      const z = document.createElement('div');
+      z.className = 'hotspot';
+      Object.assign(z.style, h.rect);
+      sprites.appendChild(z);
+      z.addEventListener('pointerdown', (e) => {
+        if (h.tap.effect === 'glow') glowAt(h.rect);
+        if (h.tap.sound && Sfx[h.tap.sound]) Sfx[h.tap.sound]();
+        sparkleBurst(e.clientX, e.clientY, h.tap.sparkColor);
+        resetIdleHint();
+      });
+    });
+
+    /* ---- narration + arrow condition ---- */
+    const arrow = page.arrow || { when: 'narration' };
+    narrate(page.text, () => {
+      if (arrow.when === 'narration') armArrow();
+    });
+    resetIdleHint();
   }
 
-  function completePage() {
-    const page = STORY.pages[index];
-    state.done = true;
+  /* ================= Navigation ================= */
+
+  function turnTo(idx) {
+    stopNarration();
+    Sfx.whoosh();
+    turner.classList.remove('turning');
+    void turner.offsetWidth;
+    turner.classList.add('turning');
+
+    world.classList.add('world-out');
+    caption.classList.add('hidden');
     setTimeout(() => {
-      btnNext.classList.remove('locked');
-      Sound.sfx('ding');
-      if (page.after) { setCaption(page.after); narrate(page.after, page.afterAudio); }
-    }, 1000);
+      world.classList.remove('world-out');
+      world.classList.add('world-in');
+      loadPage(idx);
+      setTimeout(() => world.classList.remove('world-in'), 700);
+    }, 430);
   }
 
-  /* ---------- Caption + narration ----------------------------------------- */
-  function setCaption(text) {
-    cap.innerHTML = text.split(/\s+/).map((w) => `<span class="w">${w}</span>`).join(' ');
-    cap.style.opacity = ''; cap.style.animation = 'none'; void cap.offsetWidth; cap.style.animation = '';
-  }
-  function narrateCurrent() {
-    const page = STORY.pages[index];
-    const useAfter = state.done && page.after && cap.textContent.trim().startsWith(page.after.split(' ')[0]);
-    narrate(useAfter ? page.after : page.text, useAfter ? page.afterAudio : page.audio);
-  }
-  function narrate(text, file) {
-    const words = [...cap.querySelectorAll('.w')];
-    words.forEach((w) => w.classList.remove('on', 'done'));
-    Sound.narrate(text, file,
-      (i) => words.forEach((w, k) => { w.classList.toggle('on', k === i); w.classList.toggle('done', k < i); }),
-      () => words.forEach((w) => w.classList.remove('on', 'done')));
-  }
-
-  /* ---------- Feedback ------------------------------------------------------ */
-  function sparkle(cx, cy) {
-    const r = stage.getBoundingClientRect();
-    burst(((cx - r.left) / r.width) * 100, ((cy - r.top) / r.height) * 100, 8);
-  }
-  function burst(x, y, n = 14) {
-    for (let i = 0; i < n; i++) {
-      const s = document.createElement('i'); s.className = 'spark';
-      const a = (i / n) * Math.PI * 2, d = 5 + Math.random() * 7;
-      s.style.left = x + '%'; s.style.top = y + '%';
-      s.style.setProperty('--dx', `${Math.cos(a) * d}cqw`); s.style.setProperty('--dy', `${Math.sin(a) * d}cqw`);
-      fx.appendChild(s); setTimeout(() => s.remove(), 800);
+  arrowBtn.addEventListener('click', () => {
+    if (arrowBtn.disabled) return;
+    Sfx.tap();
+    const next = pageIndex + 1;
+    if (next < STORY.pages.length) {
+      turnTo(next);
+    } else {
+      // Last page of this batch: gentle loop back to the splash for now.
+      stopNarration();
+      splash.classList.remove('gone');
+      caption.classList.add('hidden');
+      arrowBtn.classList.add('hidden');
+      pageIndex = -1;
     }
-  }
-  function scheduleHint() {
-    clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => {
-      pageEl.querySelectorAll('.obj.tap').forEach((el, i) => setTimeout(() => {
-        el.classList.add('hint');
-        el.firstElementChild.addEventListener('animationend', () => el.classList.remove('hint'), { once: true });
-      }, i * 250));
-      scheduleHint();
-    }, 6000);
+  });
+
+  /* ================= Splash ================= */
+
+  beginBtn.addEventListener('pointerdown', () => {
+    Sfx.unlock();
+    Sfx.tap();
+  });
+  beginBtn.addEventListener('click', () => {
+    splash.classList.add('gone');
+    setTimeout(() => turnTo(0), 250);
+  });
+
+  // audio unlock on any first touch
+  window.addEventListener('pointerdown', () => Sfx.unlock(), { once: true });
+
+  /* ================= Service worker ================= */
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () =>
+      navigator.serviceWorker.register('./sw.js').catch(() => {}));
   }
 })();
