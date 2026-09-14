@@ -23,8 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Stage site (exclude authoring content)
+        run: |
+          mkdir -p _site
+          rsync -a --exclude='_site' --exclude='content' --exclude='.git' --exclude='.github' ./ _site/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
