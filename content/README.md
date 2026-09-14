@@ -22,7 +22,6 @@ content/
     03-feijoa/                      <- real page 3
     ...
     12-butterfly/                       <- real page 12 (ending)
-    extra-unmapped-egg-hello/            <- flagged, not part of the 13
 ```
 
 Anything that applies to the whole book rather than one screen — the
@@ -49,8 +48,6 @@ and notes the document's original (off-by-one) label for traceability. The
 real numbering is the one confirmed by the artifact filenames already
 copied into each `artifacts/` folder (e.g. `Page3-...jpg` in `03-feijoa/`).
 
-The guide document also has a trailing "Page 12" entry (egg / "Hello,
-little caterpillar!") that doesn't correspond to anything in the 12-page
-story — it's not one of the 13 real screens. It's kept at
-`pages/extra-unmapped-egg-hello/guide.md`, outside the numbered sequence,
-flagged for you to confirm where (or whether) it belongs.
+The guide document's trailing "Page 12" entry (egg / "Hello, little
+caterpillar!") was a duplicate left over from drafting and has been
+removed — it didn't correspond to anything in the 12-page story.
