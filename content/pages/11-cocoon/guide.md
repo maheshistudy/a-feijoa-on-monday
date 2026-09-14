@@ -1,6 +1,6 @@
 # 11 — Cocoon
 
-Source label: **Page 10**
+Real page 11 (source guide labelled it "Page 10" — off by one, see `03-feijoa`).
 
 - **Object:** Cocoon
 - **Tap:** Yes

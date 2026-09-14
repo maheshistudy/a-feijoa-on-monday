@@ -1,6 +1,6 @@
 # 08 — Saturday treats
 
-Source label: **Page 7**
+Real page 8 (source guide labelled it "Page 7" — off by one, see `03-feijoa`).
 
 - **Object:** Lamington, one Hokey Pokey cone, one pineapple lump, one slice of Cheddar cheese, one slice Peperoni, one Gummy bear, one piece of Mince pie, one cocktail sausage, one Blueberry muffin, and one slice of Rock melon.
 - **Tap:** Yes

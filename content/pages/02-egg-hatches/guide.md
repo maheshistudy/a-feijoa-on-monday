@@ -1,6 +1,6 @@
 # 02 — Egg hatches
 
-Source label: **Page 2** (first of two entries labelled "Page 2" in the source guide)
+Real page 2. The source guide had two entries both labelled "Page 2" — this is the first (egg hatching); the second was actually meant to be "Page 3" (see `03-feijoa`), which shifts every page number after it down by one in the original document.
 
 - **Object:** Egg
 - **Tap:** Yes

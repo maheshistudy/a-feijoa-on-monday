@@ -1,6 +1,6 @@
 # 04 — Tamarillo (Tuesday)
 
-Source label: **Page 3**
+Real page 4 (source guide labelled it "Page 3" — off by one, see `03-feijoa`).
 
 - **Object:** Tamarillo fruit image, number 2, Tamarillo word
 - **Tap:** Yes

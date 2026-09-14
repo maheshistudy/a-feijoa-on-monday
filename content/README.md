@@ -14,30 +14,36 @@ on without touching the live page.
 ```
 content/
   pages/
-    00-cover/
-      guide.md       <- Object / Tap / Animation / Sound / Voice / Next, plus the story text for this screen
-      artifacts/      <- drop the raw art, audio, etc. for this page here
-    01-egg-on-leaf/
-    02-egg-hatches/
+    00-cover/                    <- title card ("A Feijoa on Monday")
+    01-egg-on-leaf/               <- real page 1
+    02-egg-hatches/                <- real page 2
+    03-feijoa/                      <- real page 3
     ...
+    12-butterfly/                       <- real page 12 (ending)
+    extra-unmapped-egg-hello/            <- flagged, not part of the 13
 ```
 
-Each `pages/NN-slug/` folder corresponds to one screen of the book, in story
-order (`00` = title/cover, `01` = the front-page egg, `02` = hatching, and so
-on through the ending). `guide.md` in each folder has the interaction spec
-exactly as provided, plus the matching narration text from the story script.
-Drop artifacts (images, audio, etc.) for that page straight into its
-`artifacts/` subfolder — nothing here is wired into `js/story.js` yet, that's
-a separate step once content is in place.
+Each `pages/NN-slug/` folder is one screen, numbered by its **real** page
+number: `00` = cover/title, `01`–`12` = the 12 story pages. That's 13
+folders total — front page + 12 pages, matching the story exactly. Each
+`guide.md` has the interaction spec (Object/Tap/Animation/Sound/Voice/Next)
+plus the matching narration text. Drop artifacts (images, audio, etc.) for
+that page straight into its `artifacts/` subfolder — nothing here is wired
+into `js/story.js` yet, that's a separate step once content is in place.
 
 ## Note on the source numbering
 
-The original tap/animation guide and the story script don't share the same
-"Page N" numbers (the guide has two entries both labelled "Page 2", and a
-trailing "Page 12" — an egg / "Hello, little caterpillar!" beat — that
-doesn't correspond to anything in the story script). The folders above are
-sequenced by story order rather than by the guide's own labels, and the
-guide's original label is preserved verbatim inside each `guide.md` so
-nothing is lost. The unmatched trailing entry lives in
-`pages/13-unmapped-egg-hello/guide.md` — flagging it for confirmation before
-it's wired into the story.
+The original tap/animation guide document has a typo: two entries were both
+labelled "Page 2" (egg-hatching, then Feijoa). Because of that duplicate,
+every page number after it in that document is one lower than the page it
+actually describes (its "Page 3" is really page 4, its "Page 8" is really
+page 9, and so on). Each `guide.md` states the **real** page number first,
+and notes the document's original (off-by-one) label for traceability. The
+real numbering is the one confirmed by the artifact filenames already
+copied into each `artifacts/` folder (e.g. `Page3-...jpg` in `03-feijoa/`).
+
+The guide document also has a trailing "Page 12" entry (egg / "Hello,
+little caterpillar!") that doesn't correspond to anything in the 12-page
+story — it's not one of the 13 real screens. It's kept at
+`pages/extra-unmapped-egg-hello/guide.md`, outside the numbered sequence,
+flagged for you to confirm where (or whether) it belongs.

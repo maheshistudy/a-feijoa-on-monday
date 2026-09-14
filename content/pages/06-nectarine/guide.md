@@ -1,6 +1,6 @@
 # 06 — Nectarine (Thursday)
 
-Source label: **Page 5**
+Real page 6 (source guide labelled it "Page 5" — off by one, see `03-feijoa`).
 
 - **Object:** Nectarine fruit image, number 4, Nectarine word
 - **Tap:** Yes

@@ -1,6 +1,6 @@
 # 09 — Swan plant leaf (Sunday)
 
-Source label: **Page 8**
+Real page 9 (source guide labelled it "Page 8" — off by one, see `03-feijoa`).
 
 - **Object:** Swan plant leaf
 - **Tap:** Yes

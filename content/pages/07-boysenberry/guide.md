@@ -1,6 +1,6 @@
 # 07 — Boysenberry (Friday)
 
-Source label: **Page 6**
+Real page 7 (source guide labelled it "Page 6" — off by one, see `03-feijoa`).
 
 - **Object:** Boysenberry fruit image, number 5, Boysenberry word
 - **Tap:** Yes

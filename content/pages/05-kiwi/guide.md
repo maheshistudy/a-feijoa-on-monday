@@ -1,6 +1,6 @@
 # 05 — Kiwifruit (Wednesday)
 
-Source label: **Page 4**
+Real page 5 (source guide labelled it "Page 4" — off by one, see `03-feijoa`).
 
 - **Object:** Kiwi fruit image, number 3, Kiwi word
 - **Tap:** Yes

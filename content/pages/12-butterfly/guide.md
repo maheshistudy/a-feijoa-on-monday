@@ -1,6 +1,6 @@
 # 12 — Butterfly emerges (ending)
 
-Source label: **Page 11**
+Real page 12 — the last page (source guide labelled it "Page 11" — off by one, see `03-feijoa`).
 
 - **Object:** Cocoon, butterfly
 - **Tap:** Yes

@@ -1,11 +1,11 @@
 # 10 — Full caterpillar
 
-Source label: **Page 9**
+Real page 10 (source guide labelled it "Page 9" — off by one, see `03-feijoa`).
 
-> **Note:** the story script splits this into two numbered lines (its own
-> "Page 9" and "Page 10"), but the interaction guide covers both with a
-> single screen/object ("Caterpillar"). Combined here as one screen —
-> confirm this is right before splitting it back into two pages.
+> **Note:** the narration for this single screen covers two short lines —
+> "Now he wasn't hungry anymore and he wasn't a little caterpillar
+> anymore." and "He was a big, fat caterpillar." — read together as one
+> page's voiceover, one object ("Caterpillar").
 
 - **Object:** Caterpillar
 - **Tap:** Yes
