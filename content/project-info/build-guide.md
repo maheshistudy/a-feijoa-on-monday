@@ -41,12 +41,15 @@ simple flat-colour SVG matching the bold-outline house style.
 
 ## Narration & text
 
+- Every page is read aloud via the Web Speech API, using a natural-sounding
+  female voice (pick the best available female voice on the device; fall
+  back gracefully if none is available).
 - Story text shows in a styled caption bar at the bottom of the page, with
-  words highlighting one at a time (karaoke-style) in sync with narration.
-- **Open question:** the brief specifies text-only captions with no spoken
-  voice; the current live site narrates aloud via the Web Speech API in
-  sync with the highlighting. Confirm which approach to keep before the
-  next build pass.
+  words highlighting one at a time (karaoke-style) in sync with the spoken
+  narration — highlight timing should track the speech, not run on a fixed
+  timer independent of it.
+- Decided: this supersedes the brief's original "text-only, no spoken
+  voice" instruction.
 
 ## Sound
 
