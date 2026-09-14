@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>A Feijoa on Monday — a tap-along storybook</title>
-<meta name="description" content="A tap-along picture book for little readers, from a windy Wellington garden.">
-<meta name="theme-color" content="#1b2a5e">
+<meta name="description" content="An interactive storybook celebrating Aotearoa through food, nature and play.">
+<meta name="theme-color" content="#7cc0ec">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="assets/img/icon-192.png">
 <link rel="apple-touch-icon" href="assets/img/icon-192.png">
@@ -13,19 +13,18 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Patrick+Hand&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Patrick+Hand&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
+<body class="on-cover">
 
 <div id="app">
-  <!-- Fixed-ratio stage, letterboxed on non-matching screens -->
   <div id="stage" aria-label="storybook stage">
 
     <!-- The scene world: camera zoom is applied here -->
     <div id="world">
-      <img id="scene-night" class="scene" src="assets/img/scene-night.jpg" alt="A night garden with hills, a smiling moon and a big leaf">
-      <img id="scene-day"   class="scene" src="assets/img/scene-day.jpg"   alt="A sunny garden with hills, a fantail and a big leaf">
+      <img id="scene-a" class="scene" alt="">
+      <img id="scene-b" class="scene" alt="">
       <div id="atmosphere"></div>
       <div id="sprites"></div>
       <div id="fx"></div>
@@ -33,24 +32,42 @@
 
     <!-- Non-zooming stage chrome -->
     <div id="vignette"></div>
+    <div id="hand" class="hidden" aria-hidden="true"><img src="assets/img/tap-hand.png" alt=""></div>
     <div id="caption" class="hidden"><p id="caption-text"></p></div>
 
     <button id="arrow-btn" class="hidden" aria-label="Next page" disabled>
       <img src="assets/img/arrow.png" alt="">
     </button>
 
-    <!-- Splash -->
+    <button id="mute-btn" aria-label="Sound on or off" aria-pressed="false">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <path class="spk" d="M8 18h8l10-8v28l-10-8H8z"/>
+        <path class="wave" d="M31 17a9 9 0 0 1 0 14M35 12a15 15 0 0 1 0 24" fill="none" stroke-width="3.5" stroke-linecap="round"/>
+        <path class="slash" d="M10 40 38 8" fill="none" stroke-width="4" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <!-- Cover -->
     <div id="splash">
-      <img id="splash-art" src="assets/img/scene-title.jpg" alt="A Feijoa on Monday — a caterpillar under kōwhai flowers">
-      <div id="splash-ui">
-        <p id="splash-subtitle">a tap-along story from a windy Wellington garden</p>
-        <button id="begin-btn">Tap to begin</button>
+      <img id="splash-art" src="assets/img/bg-cover.jpg" alt="A Feijoa on Monday — an interactive storybook">
+      <button id="begin-btn" aria-label="Start the story"></button>
+      <img id="cover-arrow" src="assets/img/arrow-cover.png" alt="" aria-hidden="true">
+    </div>
+
+    <!-- Ending -->
+    <div id="ending" class="hidden">
+      <div id="ending-card">
+        <img id="ending-butterfly" src="assets/img/butterfly.png" alt="">
+        <h1>The End</h1>
+        <button id="again-btn">Read it again</button>
       </div>
     </div>
 
     <div id="turner"></div>
   </div>
 </div>
+
+<pre id="test-report" class="hidden"></pre>
 
 <script src="js/audio.js"></script>
 <script src="js/story.js"></script>

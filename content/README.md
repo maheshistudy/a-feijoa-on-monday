@@ -34,8 +34,10 @@ number: `00` = cover/title, `01`–`12` = the 12 story pages. That's 13
 folders total — front page + 12 pages, matching the story exactly. Each
 `guide.md` has the interaction spec (Object/Tap/Animation/Sound/Voice/Next)
 plus the matching narration text. Drop artifacts (images, audio, etc.) for
-that page straight into its `artifacts/` subfolder — nothing here is wired
-into `js/story.js` yet, that's a separate step once content is in place.
+that page straight into its `artifacts/` subfolder. `tools/build-assets.ps1`
+reads the artwork from these folders and writes the processed sprites and
+backgrounds to `assets/img/`; the sprite positions it prints are what
+`js/story.js` uses.
 
 ## Note on the source numbering
 

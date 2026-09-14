@@ -1,6 +1,11 @@
 # A Feijoa on Monday
 
-A tap-along interactive picture book for 4–5 year olds, from a windy Wellington garden. All artwork is hand-drawn; the site is plain HTML/CSS/JS with no build step.
+A tap-along interactive picture book for 4–5 year olds — a very hungry
+caterpillar eats his way through a week of Aotearoa kai. All artwork is
+hand-drawn; the site is plain HTML/CSS/JS with no build step, no framework
+and no npm.
+
+**Live site:** https://maheshistudy.github.io/a-feijoa-on-monday/
 
 ## Run locally
 
@@ -8,31 +13,73 @@ A tap-along interactive picture book for 4–5 year olds, from a windy Wellingto
 python3 -m http.server 8000
 ```
 
-Then open http://localhost:8000 — or just open `index.html` through any static server. (Opening the file directly with `file://` works too, but the service worker only registers over http/https.)
+Then open http://localhost:8000. (Opening `index.html` directly with `file://`
+works too, but the service worker only registers over http/https.)
 
-**Sound notes:** the story is read aloud with the device's built-in voice (Web Speech API), synced to the word highlighting; tap the caption bar to hear a page again. Browsers only allow audio after a first tap — the "Tap to begin" button handles that. On iPads, the hardware silent switch / silent mode mutes web audio, so flip it off for storytime.
+Handy dev URLs:
 
-## Deploy to GitHub Pages
+- `index.html?page=7` — jump straight to a page (0-based), skipping the cover
+- `index.html?selftest=1` — runs through every page automatically, tapping
+  everything, and prints a pass/fail report (also sets the page title to
+  `TEST PASS` / `TEST FAIL`)
+- `index.html?fast=1` — no speech, timers shortened; useful when iterating
 
-1. Push this folder to a GitHub repository (`main` branch).
-2. Repo → Settings → Pages → Source: *Deploy from a branch* → `main`, `/ (root)`.
-3. The book will be live at `https://<username>.github.io/<repo>/` within a minute or two. All paths are relative, so it works from a project sub-path without configuration.
+## What's in the book
+
+Cover, then 12 pages: the egg on the leaf (night), the hatching (sunrise
+cross-fade), one feijoa, two tamarillos, three kiwifruit, four nectarines,
+five boysenberries, the Saturday feast (ten treats), the swan plant leaf,
+the big fat caterpillar, the cocoon, and the monarch butterfly.
+
+- **Narration** is read aloud with the device's built-in voice (Web Speech
+  API), preferring a female English (NZ/AU/GB) voice, with the caption words
+  highlighting in sync. Tap the caption to hear a page again.
+- **Tapping** — fruit and treats get bitten one at a time (each bite is a
+  masked hole in the drawing), numbers and fruit names are spoken when
+  tapped, the egg wobbles then pops, the caterpillar grows, the cocoon
+  sways, and the butterfly flies out in a trail of glitter.
+- **Hints** — anything that wants a tap glows softly; after a few seconds of
+  no taps, it wiggles and the little pointing hand shows where to press.
+  The green arrow only wakes up (and beckons) once the page's taps are done
+  and the narration has finished.
+- **Sound** — all effects are synthesized with WebAudio (munch, pop, boing,
+  fantail chirp, tummy gurgle, wing flutter, glitter…). The speaker button
+  top-right mutes both effects and narration. Browsers only allow audio
+  after a first tap — the cover's Start handles that. On iPads the hardware
+  silent switch mutes web audio.
 
 ## Structure
 
 - `index.html` — shell
-- `css/style.css` — stage, atmosphere, animations
-- `js/audio.js` — synthesized WebAudio sound effects (no audio files)
-- `js/story.js` — page data: text, object positions, interactions, camera (edit this to add pages)
-- `js/app.js` — engine: rendering, read-aloud narration (Web Speech API) with synced highlighting, taps, page turns
-- `assets/img/` — processed hand-drawn artwork
+- `css/style.css` — stage, sprites, atmosphere, animations
+- `js/audio.js` — synthesized sound effects
+- `js/story.js` — page data: text, sprites, positions, interactions, camera
+- `js/app.js` — engine: rendering, narration + highlighting, taps, hints, page turns
+- `assets/img/` — processed art (backgrounds, sprites, bite masks, icons)
 - `manifest.webmanifest` + `sw.js` — installable PWA, works offline after first visit
+- `content/` — the page-by-page brief and the raw artwork (not published)
+- `tools/` — the image pipeline that turns the raw artwork into `assets/img/` (not published)
 
-## Adding pages
+## Art pipeline
 
-Append a page object to `STORY.pages` in `js/story.js`. Positions use the `px(x, y, w, h)` helper in original scene pixels (1316 × 924). New drawings go in `assets/img/` and should be added to the `PRECACHE` list in `sw.js` (bump the `CACHE` version string when you do).
+The artist draws every page on a 3508 × 2480 sheet, with each object
+(fruit, number, word, cracked egg…) on its own sheet in the position where
+it belongs. `tools/build-assets.ps1` (Windows PowerShell, compiles
+`tools/ImgTool.cs` on the fly, no extra installs) turns those into:
 
-## Production notes for the assignment log
+- backgrounds resized to 1754 × 1240 JPEG;
+- sprites keyed off the white sheet and auto-cropped, printing their
+  position on the sheet so `story.js` can place them exactly;
+- bite masks from the "hole" drawings (the hole is detected and reported, so
+  multi-fruit sheets get one tappable cell per fruit);
+- objects painted into a background (eggs, caterpillars, cocoons) lifted
+  out as sprites, with the gap behind them filled so they can move.
 
-- Image processing (egg/caterpillar cut-outs, background inpainting, night/day scenes) was done with Python (OpenCV + Pillow) from the original drawings.
-- Narration text in `js/story.js` is an original retelling written for this book — keep your own record of any AI assistance per the course's AI-use statement.
+Re-run it after changing artwork, then copy the printed rectangles into
+`js/story.js`.
+
+## Deploy
+
+Pushes to `main` publish via GitHub Actions (`.github/workflows/deploy.yml`)
+with `content/` and `tools/` excluded. The repo's Pages source must be set
+to **GitHub Actions** (Settings → Pages) for the workflow to succeed.
