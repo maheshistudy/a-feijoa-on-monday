@@ -13,6 +13,8 @@ on without touching the live page.
 
 ```
 content/
+  project-info/                  <- book-wide notes: brief, credits, AI-use statement,
+                                     style/character notes, anything not tied to one page
   pages/
     00-cover/                    <- title card ("A Feijoa on Monday")
     01-egg-on-leaf/               <- real page 1
@@ -22,6 +24,11 @@ content/
     12-butterfly/                       <- real page 12 (ending)
     extra-unmapped-egg-hello/            <- flagged, not part of the 13
 ```
+
+Anything that applies to the whole book rather than one screen — the
+assignment brief, an AI-use log, credits, general character/style notes —
+goes in `content/project-info/` as plain `.md`/`.txt` files, not inside a
+page folder.
 
 Each `pages/NN-slug/` folder is one screen, numbered by its **real** page
 number: `00` = cover/title, `01`–`12` = the 12 story pages. That's 13
