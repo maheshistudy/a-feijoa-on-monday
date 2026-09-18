@@ -27,6 +27,7 @@
   const muteBtn   = $('#mute-btn');
   const splash    = $('#splash');
   const beginBtn  = $('#begin-btn');
+  const coverArrow = $('#cover-arrow');
   const ending    = $('#ending');
   const againBtn  = $('#again-btn');
   const turner    = $('#turner');
@@ -205,10 +206,8 @@
       const el = document.createElement('div');
       el.className = 'panel' + (k === 0 ? ' show' : '');
       el.dataset.id = cid;
-      placeAt(el, c);
-      const img = document.createElement('img');
-      img.src = asset(IMG + c.file); img.alt = '';
-      el.appendChild(img);
+      Object.assign(el.style, captionRect(cid));
+      // the highlight boxes go in first, so they sit behind the words like a marker pen
       const boxes = c.words.map(([x, y, w, h]) => {
         const b = document.createElement('div');
         b.className = 'w';
@@ -216,6 +215,9 @@
         el.appendChild(b);
         return b;
       });
+      const img = document.createElement('img');
+      img.src = asset(IMG + c.file); img.alt = '';
+      el.appendChild(img);
       const panel = { id: cid, el, boxes, first };
       boxes.forEach(b => words.push({ el: b, panel }));
       first += boxes.length;
@@ -837,6 +839,7 @@
   function showCover() {
     stopNarration();
     pageIndex = -1; phase = 'cover'; nextArmed = false; narrated = false;
+    starting = false;          // the cover is always startable
     sprites.innerHTML = ''; captions.innerHTML = '';
     hideHand();
     setNav();
@@ -886,8 +889,20 @@
 
   /* ================= Cover ================= */
 
-  // the designer's Start arrow and hand, placed where drawn
-  placeAt(beginBtn, LAYOUT.img[STORY.cover.arrow]);
+  // The cover's tap target covers the whole painted "Start" button AND the arrow beside it —
+  // a child (or an adult) taps the word as readily as the arrow, and a 7% arrow alone is a
+  // mean target. The designer's arrow image still sits exactly where it was drawn, inside it.
+  const COVER_BTN = { x: 1300, y: 1320, w: 1100, h: 340 };
+  placeAt(beginBtn, COVER_BTN);
+  (() => {
+    const a = LAYOUT.img[STORY.cover.arrow];
+    Object.assign(coverArrow.style, {
+      left:   ((a.x - COVER_BTN.x) / COVER_BTN.w * 100) + '%',
+      top:    ((a.y - COVER_BTN.y) / COVER_BTN.h * 100) + '%',
+      width:  (a.w / COVER_BTN.w * 100) + '%',
+      height: (a.h / COVER_BTN.h * 100) + '%'
+    });
+  })();
   placeAt(backBtn, LAYOUT.img['arrow-back']);
   placeAt(nextBtn, LAYOUT.img['arrow-next']);
 
@@ -895,23 +910,35 @@
   function startStory() {
     if (starting) return;
     starting = true;
-    Sfx.unlock();
-    if (!FAST) Voice.unlock();
-    Sfx.chirp();
-    hideHand(); clearTimeout(idleTimer);
-    const [cx, cy] = elCenter(beginBtn);
-    sparkleBurst(cx, cy, '#fff3b0', 18);
-    const go = () => { splash.classList.add('gone'); setTimeout(() => { turnTo(0, { instant: true }); starting = false; }, FAST ? 30 : 300); };
-    if (FAST) { later(50, go); return; }
-    // "A Feijoa on Monday", in the child's voice, then the first page
-    const dur = (LAYOUT.timings.cover && LAYOUT.timings.cover.duration) || 3;
+    // Whatever happens below — a refused play(), a browser that never fires `ended`, an audio
+    // error — the cover must never be left unable to start again. go() is idempotent and a
+    // failsafe releases the guard, so a second tap always works.
     let went = false;
-    const once = () => { if (!went) { went = true; go(); } };
-    const a = Voice.narrate(STORY.cover.narration, () => setTimeout(once, 900));
-    a.onended = once;
-    setTimeout(once, (dur + 1.5) * 1000);
-  }
-  beginBtn.addEventListener('pointerdown', () => Sfx.unlock());
+    const failsafe = setTimeout(() => { starting = false; }, 8000);
+    const go = () => {
+      if (went) return;
+      went = true;
+      clearTimeout(failsafe);
+      splash.classList.add('gone');
+      setTimeout(() => { turnTo(0, { instant: true }); starting = false; }, FAST ? 30 : 300);
+    };
+    try {
+      Sfx.unlock();
+      if (!FAST) Voice.unlock();
+      Sfx.chirp();
+      hideHand(); clearTimeout(idleTimer);
+      const [cx, cy] = elCenter(beginBtn);
+      sparkleBurst(cx, cy, '#fff3b0', 18);
+      if (FAST) { later(50, go); return; }
+      // "A Feijoa on Monday", in the child's voice, then the first page
+      const dur = (LAYOUT.timings.cover && LAYOUT.timings.cover.duration) || 3;
+      const a = Voice.narrate(STORY.cover.narration, () => setTimeout(go, 900));
+      a.onended = go;
+      setTimeout(go, (dur + 1.5) * 1000);
+    } catch (err) {
+      go();
+    }
+  }  beginBtn.addEventListener('pointerdown', () => Sfx.unlock());
   beginBtn.addEventListener('click', startStory);
   window.addEventListener('pointerdown', () => Sfx.unlock(), { once: true });
 
@@ -952,6 +979,65 @@
     }, 300);
   }
 
+  // ?covertest=1 - the cover round trip, in real time with the audio actually playing, which
+  // the self-test cannot cover because it runs in FAST mode and skips startStory's audio path.
+  if (params.has('covertest')) {
+    const out = [];
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const waitFor = async (fn, ms) => { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) return false; await sleep(50); } return true; };
+    const hit = () => {
+      const r = beginBtn.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const el = document.elementFromPoint(cx, cy);
+      const id = el ? (el.id || el.className || el.tagName) : 'nothing';
+      return `arrow at ${Math.round(cx)},${Math.round(cy)} ${Math.round(r.width)}x${Math.round(r.height)} -> topmost "${id}"${el === beginBtn || (el && beginBtn.contains(el)) ? ' (the button)' : ' <-- NOT THE BUTTON'}`;
+    };
+    const hitAt = (fx, fy, what) => {
+      const r = beginBtn.getBoundingClientRect();
+      const x = r.left + r.width * fx, y = r.top + r.height * fy;
+      const el = document.elementFromPoint(x, y);
+      const ok = el === beginBtn || (el && beginBtn.contains(el));
+      return `tap on ${what} -> ${ok ? 'reaches the Start button' : 'MISSES, hits "' + (el ? (el.id || el.tagName) : 'nothing') + '"'}`;
+    };
+    const state = () => `page=${pageIndex} phase=${phase} starting=${starting} turning=${turning} splash="${splash.className}" op=${getComputedStyle(splash).opacity} pe=${getComputedStyle(beginBtn).pointerEvents}`;
+    let fails = 0;
+    const post = () => { try { fetch('/covertest', { method: 'POST', body: out.join('\n') }); } catch (e) {} };
+    const push = (line) => { out.push(line); post(); };    const step = async (label, act, check, ms) => {
+      act();
+      const ok = await waitFor(check, ms);
+      if (!ok) fails++;
+      push(`${ok ? 'ok  ' : 'FAIL'} ${label}  ${state()}`);
+      return ok;
+    };
+    window.addEventListener('error', (e) => { fails++; push('FAIL js error: ' + e.message + ' @' + e.lineno); });
+    (async () => {
+      await sleep(600);
+      push('     start  ' + state());
+      const probe = new Audio(audio('cover-narration'));
+      probe.addEventListener('loadedmetadata', () => push('     cover mp3 loads, ' + probe.duration.toFixed(2) + 's'));
+      probe.addEventListener('error', () => push('FAIL cover mp3 will not load'));
+      push('     ' + hit());
+      push('     ' + hitAt(0.25, 0.5, 'the painted Start label'));
+      await step('1st start -> page 0', () => beginBtn.click(), () => pageIndex === 0, 20000);
+      await waitFor(() => phase === 'invite' || phase === 'complete', 25000);
+      push('     page 0 settled  ' + state());
+      await step('back -> cover', () => backBtn.click(), () => pageIndex === -1, 6000);
+      await sleep(1200);
+      push('     on cover  ' + state());
+      push('     ' + hit());
+      push('     ' + hitAt(0.25, 0.5, 'the painted Start label'));
+      await step('2nd start -> page 0', () => beginBtn.click(), () => pageIndex === 0, 20000);
+      await waitFor(() => phase === 'invite' || phase === 'complete', 25000);
+      await step('back -> cover again', () => backBtn.click(), () => pageIndex === -1, 6000);
+      await sleep(1200);
+      await step('3rd start -> page 0', () => beginBtn.click(), () => pageIndex === 0, 20000);
+      push(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS');
+      document.title = fails ? 'COVER FAIL' : 'COVER PASS';
+      const report = $('#test-report'); report.classList.remove('hidden'); report.textContent = out.join('\n');
+      try { fetch('/covertest', { method: 'POST', body: out.join('\n') }); } catch (e) {}
+    })();
+  }
+
   if (SELFTEST) {
     const report = $('#test-report');
     report.classList.remove('hidden');
@@ -959,6 +1045,20 @@
     let fails = 0;
     const log = (s) => { lines.push(s); report.textContent = lines.join('\n'); };
     const fail = (s) => { fails++; log('FAIL: ' + s); };
+    const hit = () => {
+      const r = beginBtn.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const el = document.elementFromPoint(cx, cy);
+      const id = el ? (el.id || el.className || el.tagName) : 'nothing';
+      return `arrow at ${Math.round(cx)},${Math.round(cy)} ${Math.round(r.width)}x${Math.round(r.height)} -> topmost "${id}"${el === beginBtn || (el && beginBtn.contains(el)) ? ' (the button)' : ' <-- NOT THE BUTTON'}`;
+    };
+    const hitAt = (fx, fy, what) => {
+      const r = beginBtn.getBoundingClientRect();
+      const x = r.left + r.width * fx, y = r.top + r.height * fy;
+      const el = document.elementFromPoint(x, y);
+      const ok = el === beginBtn || (el && beginBtn.contains(el));
+      return `tap on ${what} -> ${ok ? 'reaches the Start button' : 'MISSES, hits "' + (el ? (el.id || el.tagName) : 'nothing') + '"'}`;
+    };
     const state = () => `[page ${pageIndex} phase ${phase} turning ${turning} back ${backBtn.disabled ? 'off' : 'on'} next ${nextBtn.disabled ? 'off' : 'on'} tasks ${tasksDone}/${tasksNeeded}]`;
     window.addEventListener('error', (e) => fail(`js error: ${e.message} @ ${(e.filename || '').split('/').pop()}:${e.lineno}`));
     window.addEventListener('unhandledrejection', (e) => fail('unhandled rejection: ' + (e.reason && e.reason.message || e.reason)));

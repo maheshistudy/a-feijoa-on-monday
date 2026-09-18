@@ -216,14 +216,26 @@ html, body {
   opacity: 0; transition: opacity .7s ease;
 }
 .panel.show { opacity: 1; }
-.panel img { width: 100%; height: 100%; display: block; pointer-events: none; }
+/* The cream band is keyed away, so a soft white halo keeps the designer's text readable over
+   the artwork — the night sky included — without putting a panel back on top of the picture.
+   position:relative lifts the words above the absolutely-placed highlight boxes. */
+/* a soft light behind the block of text, so it reads over grass and leaves without a panel */
+.panel::before {
+  content: ''; position: absolute; inset: -1.6vmin -2.2vmin; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 50%, rgba(255,255,255,.60) 0%, rgba(255,255,255,.42) 55%, rgba(255,255,255,0) 80%);
+}
+.panel img {
+  width: 100%; height: 100%; display: block; pointer-events: none; position: relative;
+  filter: drop-shadow(0 0 .22vmin rgba(255,255,255,.98))
+          drop-shadow(0 0 .7vmin  rgba(255,255,255,.95))
+          drop-shadow(0 0 1.7vmin rgba(255,255,255,.8));
+}
 .panel .w {
-  position: absolute; border-radius: 4px;
-  background: rgba(246, 201, 69, 0);
-  mix-blend-mode: multiply;
+  position: absolute; border-radius: 6px;
+  background: rgba(250, 205, 70, 0);
   transition: background .12s ease;
 }
-.panel .w.lit { background: rgba(246, 201, 69, .95); }
+.panel .w.lit { background: rgba(250, 205, 70, .92); }
 body.show-boxes .panel .w { outline: 1px solid rgba(220,40,40,.8); }
 
 /* ---------- Navigation arrows (the designer's, placed where drawn) ---------- */
@@ -290,12 +302,16 @@ body.on-cover #mute-btn .spk, body.on-cover #mute-btn .wave { opacity: 0; }
 #splash.gone { opacity: 0; transform: scale(1.06); pointer-events: none; }
 #splash-art { width: 100%; height: 100%; object-fit: fill; display: block; }
 #begin-btn {
-  position: absolute;                    /* placed over the designer's Start arrow by app.js */
+  position: absolute;                    /* spans the painted "Start" label and the arrow */
   border: none; background: transparent; cursor: pointer; padding: 0;
+}
+#cover-arrow {
+  position: absolute;                    /* sits inside it, exactly where the arrow was drawn */
+  display: block;
   animation: arrow-beckon 1.6s ease-in-out infinite;
   filter: drop-shadow(0 3px 6px rgba(0,0,0,.35));
 }
-#begin-btn img { width: 100%; height: 100%; display: block; }
+body.show-boxes #begin-btn { outline: 3px dashed rgba(220,40,40,.9); }
 #begin-btn:focus-visible { outline: 3px solid #fff; outline-offset: 4px; border-radius: 8px; }
 
 /* ---------- Ending ---------- */
@@ -387,7 +403,7 @@ body.portrait #rotate { display: grid; }
 #test-report.hidden { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .sprite.pending, .cell.pending, #arrow-next.armed, #begin-btn, #again-btn, #ending-butterfly,
+  .sprite.pending, .cell.pending, #arrow-next.armed, #cover-arrow, #again-btn, #ending-butterfly,
   .anim-breathe, .anim-hover, .anim-flap-slow { animation: none !important; }
   .anim-queasy { animation: none !important; }
   .pending .body { animation-duration: 4s !important; }

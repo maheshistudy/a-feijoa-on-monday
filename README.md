@@ -30,7 +30,10 @@ and the monarch butterfly.
   pointing hand are all supplied artwork, placed exactly where they were
   drawn. The narration is a recording of the author's son; the engine only
   places, times and gates.
-- **Narration** plays as each page opens. The words of the caption panel
+- **The story sits along the bottom** of every page. The designer's typeset
+  caption is lifted off its cream band, so it floats over the artwork instead
+  of covering it, centred between the two arrows.
+- **Narration** plays as each page opens. The words of the caption
   light up one by one in time with the recording; the timing comes from the
   recording's own rhythm and the highlight follows the audio playhead, so it
   cannot drift. Tap the caption to hear the page again.
@@ -54,11 +57,26 @@ and the monarch butterfly.
 
 ## Run locally
 
-Open `index.html` directly (it works from `file://`), or serve the folder:
+Double-click `index.html` — it runs straight from the file system, no server
+and no install needed. To test the offline/installable behaviour as well (the
+service worker only registers over http), serve it instead:
 
+```powershell
+.\tools\serve.ps1            # http://localhost:8080, opens your browser
+.\tools\serve.ps1 -Dist      # serve dist/ to try the downloadable copies
 ```
-python3 -m http.server 8000
+
+Windows blocks PowerShell scripts by default (`running scripts is disabled on
+this system`). Either double-click **`tools\serve.cmd`**, which needs no
+change, or allow local scripts once, for your account only:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
+
+That is also what `tools\build-assets.ps1`, `tools\bundle.ps1` and
+`tools\verify.ps1` need. To run a single script without changing anything:
+`powershell -ExecutionPolicy Bypass -File .\tools\verify.ps1`.
 
 Handy dev URLs:
 
@@ -70,6 +88,12 @@ Handy dev URLs:
 - `index.html?boxes=1` — outlines the detected word boxes on the captions
 - `index.html?envelope=1` — a word timeline with a moving playhead, to check
   the highlight against the recording by ear
+
+To check the whole book at once, headlessly:
+
+```powershell
+.\tools\verify.ps1           # self-test + a screenshot of every page + the rotate prompt
+```
 
 ## Structure
 

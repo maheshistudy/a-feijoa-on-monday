@@ -392,6 +392,30 @@ public static class ImgTool {
         return j.Substring(0, j.Length - 1) + ",\"sky\":[" + sr + "," + sg + "," + sb + "],\"uncovered\":" + uncovered + "}";
     }
 
+    // ---------- TextPanel: lift the typeset text off its cream band ----------
+    // A global colour key, not a border flood, so the enclosed counters of "o" and "e" clear too.
+    // The result is cropped to the ink's bounding box, so the panel can be placed as a block of
+    // text wherever the page wants it rather than where the band happened to sit.
+    public static string TextPanel(string src, string dst, int rx, int ry, int rw, int rh,
+                                   int tolHard, int tolSoft, double scale, int pad) {
+        int w, h; var buf = Load(src, out w, out h);
+        var crop = CropBuf(buf, w, h, rx, ry, rw, rh);
+        var all = new List<int>(); for (int i = 0; i < rw * rh; i += 3) all.Add(i);
+        int cr, cg, cb; ModeColor(crop, all, out cr, out cg, out cb);
+        // Ink is whatever is DARKER than the band. Keying on plain colour distance would also
+        // catch the white sheet around the band, which is just as far from cream as the ink is.
+        int bandLum = (cr * 30 + cg * 59 + cb * 11) / 100;
+        var alpha = new byte[rw * rh];
+        for (int i = 0; i < alpha.Length; i++) {
+            int lum = (crop[i * 4 + 2] * 30 + crop[i * 4 + 1] * 59 + crop[i * 4] * 11) / 100;
+            int d = bandLum - lum;
+            alpha[i] = (byte)(d <= tolHard ? 0 : (d >= tolSoft ? 255 : (d - tolHard) * 255 / Math.Max(1, tolSoft - tolHard)));
+        }
+        RemoveSpecks(alpha, rw, rh, 30);
+        string j = SaveSprite(crop, rw, rh, alpha, rx, ry, scale, pad, dst);
+        return j.Substring(0, j.Length - 1) + ",\"band\":[" + cr + "," + cg + "," + cb + "]}";
+    }
+
     // ---------- WordBoxes: detect the word boxes on a typeset caption band ----------
     // The crop (rx,ry,rw,rh) is the cream band. Ink = pixels further than inkTol from the band colour.
     // Lines come from the horizontal projection; words from the vertical projection per line, splitting on

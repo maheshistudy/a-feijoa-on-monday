@@ -31,6 +31,16 @@ function fitOf(id, cx, cy, boxW, boxH) {
   const s = Math.min(boxW / r.w, boxH / r.h);
   return px(cx - r.w * s / 2, cy - r.h * s / 2, r.w * s, r.h * s);
 }
+// The caption panels are lifted off their cream band by the pipeline (transparent PNG, cropped
+// to the ink) and set as a block of text along the bottom of the page: centred between the two
+// arrows and a little smaller than drawn, so the story never covers the artwork.
+const CAPTION = { bottom: 2380, maxW: 2520, maxH: 430, scale: 0.9 };
+function captionRect(id) {
+  const c = LAYOUT.captions[id];
+  const s = Math.min(CAPTION.scale, CAPTION.maxW / c.w, CAPTION.maxH / c.h);
+  const w = c.w * s, h = c.h * s;
+  return px((SCENE_W - w) / 2, CAPTION.bottom - h, w, h);
+}
 // the standalone bundle (tools/bundle.ps1) defines window.BUNDLE_ASSETS, mapping each path to a data: URI
 const asset = (path) => (window.BUNDLE_ASSETS && window.BUNDLE_ASSETS[path]) || path;
 const src = (id) => asset(IMG + LAYOUT.img[id].file);

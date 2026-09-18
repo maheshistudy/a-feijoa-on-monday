@@ -76,6 +76,23 @@ Add-Type -Path "tools\ImgTool.cs" -ReferencedAssemblies System.Drawing
 **There is no extract-and-inpaint path any more.** Every object ships as its
 own layer; cutting objects out of backgrounds left visible smudges in v1.
 
+## Caption panels
+
+The panel is found by keying white off the sheet (that gives the cream band's
+rectangle), then `ImgTool.TextPanel` keys the band away and crops to the ink.
+It keys on **darkness**, not colour distance: the white sheet around the band
+is just as far from cream as the text is, so a colour key keeps the whole
+band and the crop never tightens.
+
+The result is a transparent PNG of the designer's words alone. `js/story.js`
+places it along the bottom of the page (`CAPTION` = bottom 2380 of 2480, max
+2520 wide, 0.9 scale), centred between the two arrows — the author asked for
+this after seeing the panels in their drawn positions cover the artwork.
+Legibility comes from CSS, not a panel: a soft white radial scrim behind the
+block plus a white halo around each glyph. Word boxes are measured against
+the ink crop, and the highlight boxes are inserted before the image so they
+sit under the words like a marker pen.
+
 ## Word boxes
 
 Caption panels (`PN.jpg`) are clean typeset text on a flat cream band.
@@ -122,6 +139,9 @@ that page only are the documented fallback.
 .\tools\verify.ps1 -Bundle               # dist/a-feijoa-on-monday.html
 .\tools\verify.ps1 -NoShots              # self-test only
 ```
+
+`.\tools\serve.ps1` serves the book on http://localhost:8080 when something
+http-only needs testing (the service worker); otherwise `file://` is fine.
 
 It runs `?selftest=1` (report + title), screenshots the cover and every page
 into `tools/out/shots/` and one `tools/out/contact-sheet.jpg`, and checks

@@ -53,6 +53,12 @@ headless screenshots:
   the offline file, `-NoShots` for the self-test alone.
 - `?page=N`, `?fast=1`, `?boxes=1` (word boxes), `?envelope=1` (word
   timeline with playhead), `?rotatecheck=1` are the debug switches.
+- `.\tools\serve.ps1` serves the book on http://localhost:8080 when the
+  service worker or anything else http-only needs testing; otherwise opening
+  `index.html` from disk is enough.
+- Windows blocks scripts by default here: use `tools\serve.cmd`, or
+  `powershell -ExecutionPolicy Bypass -File <script>`, or allow them once
+  with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 - Look at the contact sheet as well as the report: only eyes catch a sprite in
   the wrong place. Audio sync cannot be verified headlessly — say so.
 
