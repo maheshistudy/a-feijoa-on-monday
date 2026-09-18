@@ -7,6 +7,17 @@ and no npm.
 
 **Live site:** https://maheshistudy.github.io/a-feijoa-on-monday/
 
+## Read it offline
+
+Download **`a-feijoa-on-monday.html`** from the
+[latest release](https://github.com/maheshistudy/a-feijoa-on-monday/releases/latest)
+and double-click it. It opens in your web browser and works offline, on a
+laptop, tablet or phone — nothing to install. Turn the sound on, and hold a
+phone sideways.
+
+(`a-feijoa-on-monday.zip` in the same release is the same book as a folder:
+unzip it and open `index.html`. It opens a little faster.)
+
 ## Run locally
 
 ```
