@@ -30,12 +30,13 @@ disappears.
 
 ## 2. Decisions locked with the author
 
-1. **Caption placement** — each `PN.jpg` is composited at exactly the
-   position it occupies on its source sheet. The positions vary per page
-   (P3 sits at 4.6% from the top, P2 at 74%, most around 20–25%) because
-   the designer placed each caption clear of that page's artwork. The
-   engine honours that and never re-flows it.
-2. **Page 8** — `p8-1.jpg` and `p8-2.jpg` are the two halves of one
+1. **Caption placement** — *revised once built, see §14.* The original
+   decision was to composite each `PN.jpg` exactly where it sits on its
+   source sheet. In practice those positions covered the artwork on several
+   pages, so the panels are now keyed off their cream band and set along the
+   bottom of every page, centred between the two arrows and a little smaller
+   than drawn. The designer's typeset words are untouched; only the band
+   behind them and their position on the page are the engine's doing.2. **Page 8** — `p8-1.jpg` and `p8-2.jpg` are the two halves of one
    29-second narration. The first shows, then cross-fades to the second when
    the recording reaches "One Gummybear"; word highlighting runs
    continuously across both.
@@ -515,3 +516,19 @@ differs from the plan above, and what to know before merging:
 - **Phase 10** is yours: commit, open the pull request (the run attaches the
   two downloads), merge, then `.\tools\verify.ps1 -Url <pages url>` and
   download the release file and open it.
+
+### Captions moved to the bottom (2026-09-18, after review)
+
+Seen in place, the designer's own panel positions covered the main scene on
+most pages. The pipeline now keys the cream band away with
+`ImgTool.TextPanel` — an ink-is-darker-than-the-band key, not a colour
+distance, because the white sheet around the band is just as far from cream
+as the text is — and crops to the ink. `js/story.js` places that block along
+the bottom (`CAPTION`: bottom 2380 of 2480, max 2520 wide, 0.9 scale),
+centred between the arrows. Word boxes are measured against the ink crop, so
+the highlight still lands on the right word.
+
+Legibility over the artwork comes from two CSS layers, not a panel: a soft
+white radial scrim behind the block, and a white halo around each glyph via
+stacked `drop-shadow` filters. The highlight boxes are inserted *before* the
+image so they read as a marker pen under the words.

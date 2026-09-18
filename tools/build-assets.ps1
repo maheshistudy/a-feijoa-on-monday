@@ -194,14 +194,17 @@ $PANELS = [ordered]@{
 }
 foreach ($k in $PANELS.Keys) {
   $src = "$P\$($PANELS[$k])"
-  $band = [ImgTool]::KeyCrop($src, "$IMG\text-$k.png", 0,0,0,0, 'white', 6, 24, $S, 0, 200) | ConvertFrom-Json
-  if ($band.error) { Fail "text-$k -> $($band.error)" }
+  $band = [ImgTool]::KeyCrop($src, "$OUT\band-$k.png", 0,0,0,0, 'white', 6, 24, 0.25, 0, 200) | ConvertFrom-Json
+  if ($band.error) { Fail "text-${k}: no caption band found on the sheet" }
+  # key the cream band away so the story never covers the artwork, then crop to the ink
+  $ink = [ImgTool]::TextPanel($src, "$IMG\text-$k.png", $band.x, $band.y, $band.w, $band.h, 25, 70, $S, 4) | ConvertFrom-Json
+  if ($ink.error) { Fail "text-${k}: no text found on the band" }
   $frac = if ($GAP.ContainsKey($k)) { $GAP[$k] } else { 0.18 }
-  $wb = [ImgTool]::WordBoxes($src, $band.x, $band.y, $band.w, $band.h, 80, $frac, "$OUT\boxes-$k.png") | ConvertFrom-Json
+  $wb = [ImgTool]::WordBoxes($src, $ink.x, $ink.y, $ink.w, $ink.h, 80, $frac, "$OUT\boxes-$k.png") | ConvertFrom-Json
   $words = @($TEXT[$k] -split '\s+' | Where-Object { $_ })
-  Log "text-$k" ("{0},{1} {2}x{3}  lines={4} boxes={5} words={6}" -f $band.x, $band.y, $band.w, $band.h, $wb.lines, $wb.words.Count, $words.Count)
-  if ($wb.words.Count -ne $words.Count) { Fail "text-${k}: detected $($wb.words.Count) word boxes but the text has $($words.Count) words — see tools/out/boxes-$k.png; adjust `$GAP['$k']" }
-  $layout.captions[$k] = [ordered]@{ file = "text-$k.png"; x = $band.x; y = $band.y; w = $band.w; h = $band.h; words = @($wb.words | ForEach-Object { ,@($_[0], $_[1], $_[2], $_[3]) }) }
+  Log "text-$k" ("band {0}x{1} -> text {2}x{3}  lines={4} boxes={5} words={6}" -f $band.w, $band.h, $ink.w, $ink.h, $wb.lines, $wb.words.Count, $words.Count)
+  if ($wb.words.Count -ne $words.Count) { Fail "text-${k}: detected $($wb.words.Count) word boxes but the text has $($words.Count) words - see tools/out/boxes-$k.png; adjust `$GAP['$k']" }
+  $layout.captions[$k] = [ordered]@{ file = "text-$k.png"; x = $ink.x; y = $ink.y; w = $ink.w; h = $ink.h; words = @($wb.words | ForEach-Object { ,@($_[0], $_[1], $_[2], $_[3]) }) }
   $layout.text[$k] = $words
 }
 
