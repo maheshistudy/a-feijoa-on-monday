@@ -1,8 +1,15 @@
 /* ============================================================
-   app.js — storybook engine
-   Renders pages from STORY: backgrounds, sprites, tap
-   reactions, read-aloud narration with synced highlighting,
-   camera, atmosphere, hints, page turns and the ending.
+   app.js — storybook engine (v2)
+
+   Places the designer's layers (STORY + LAYOUT), plays the
+   recorded narration with word highlighting driven by the audio
+   element's own currentTime, gates the two navigation arrows,
+   invites exactly one tap at a time, and replays a page in full
+   whenever it is entered — forwards, backwards or again.
+
+   Nothing here draws, typesets or speaks: every pixel and every
+   sound the child sees or hears (apart from the small synthesized
+   tap effects) comes from the artwork and recordings.
    ============================================================ */
 
 (() => {
@@ -10,149 +17,115 @@
 
   const stage     = $('#stage');
   const world     = $('#world');
+  const scene     = $('#scene');
   const sprites   = $('#sprites');
-  const atmo      = $('#atmosphere');
   const fx        = $('#fx');
-  const sceneA    = $('#scene-a');
-  const sceneB    = $('#scene-b');
-  const caption   = $('#caption');
-  const capText   = $('#caption-text');
-  const arrowBtn  = $('#arrow-btn');
-  const muteBtn   = $('#mute-btn');
+  const captions  = $('#captions');
   const hand      = $('#hand');
+  const backBtn   = $('#arrow-back');
+  const nextBtn   = $('#arrow-next');
+  const muteBtn   = $('#mute-btn');
   const splash    = $('#splash');
   const beginBtn  = $('#begin-btn');
   const ending    = $('#ending');
   const againBtn  = $('#again-btn');
   const turner    = $('#turner');
+  const timeline  = $('#timeline');
 
-  const params = new URLSearchParams(location.search);
+  const params   = new URLSearchParams(location.search);
   const SELFTEST = params.has('selftest');
-  const FAST = SELFTEST || params.has('fast');
+  const FAST     = SELFTEST || params.has('fast');
+  const SHOW_TL  = params.has('envelope');
+  if (params.has('boxes')) document.body.classList.add('show-boxes');
 
-  let pageIndex = -1;
-  let activeScene = sceneA;
+  /* ================= State ================= */
+
+  let pageIndex = -1;              // -1 = cover
   let pageToken = 0;               // bumps on every page load; stale timers check it
+  let phase = 'cover';             // cover | settle | narrate | invite | complete
   let muted = false;
+  let turning = false;
 
   // per-page progress
   let tasksNeeded = 0, tasksDone = 0;
-  let mainDone = false, afterStarted = false, afterDone = false, arrowArmed = false;
+  let narrated = false, afterStarted = false, nextArmed = false;
   let pending = [];                // elements still waiting for a tap (for hints)
   let idleTimer = null;
+  const runs = [];                 // how many times each page has been loaded (self-test)
 
   const later = (ms, fn) => {
     const t = pageToken;
     return setTimeout(() => { if (t === pageToken) fn(); }, FAST ? Math.min(ms, 60) : ms);
   };
   const pct = (v) => parseFloat(v);
+  const pxRect = (x, y, w, h) => px(x, y, w, h);
+  const placeAt = (el, r) => Object.assign(el.style, px(r.x, r.y, r.w, r.h));
 
   /* ================= Preloading ================= */
 
   const imgCache = {};
-  function preload(src) {
-    if (!src || imgCache[src]) return;
-    const i = new Image(); i.src = src; imgCache[src] = i;
-  }
+  function preloadImg(s) { if (!s || imgCache[s]) return; const i = new Image(); i.src = s; imgCache[s] = i; }
   function preloadPage(p) {
     if (!p) return;
-    preload(p.bg);
-    (p.objects || []).forEach(o => { preload(o.img); if (o.tap && o.tap.mask) preload(o.tap.mask); });
+    preloadImg(src(p.bg));
+    (p.objects || []).forEach(o => { if (o.layout) preloadImg(src(o.layout)); if (o.tap && o.tap.mask) preloadImg(src(o.tap.mask)); });
+    (p.caption || []).forEach(c => preloadImg(asset(IMG + LAYOUT.captions[c].file)));
+    if (p.narration) Voice.preload(p.narration);
+    (p.objects || []).forEach(o => { if (o.tap && o.tap.say) Voice.preload(o.tap.say); });
   }
 
-  /* ================= Scene & atmosphere ================= */
+  /* ================= Voice: the recordings ================= */
 
-  function showScene(src, crossfade) {
-    const next = activeScene === sceneA ? sceneB : sceneA;
-    next.src = src;
-    const dur = crossfade ? 'opacity 2.6s ease' : 'none';
-    next.style.transition = dur;
-    activeScene.style.transition = dur;
-    if (crossfade) {
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        next.style.opacity = 1;
-        activeScene.style.opacity = 0;
-        activeScene = next;
-      }));
-    } else {
-      next.style.opacity = 1;
-      activeScene.style.opacity = 0;
-      activeScene = next;
+  const Voice = (() => {
+    // iOS unlocks media elements one at a time on a user gesture, so the whole book uses just two:
+    // one for narration, one for the single-word clips. Both are unlocked by the cover's Start tap.
+    const narrEl = new Audio(), clipEl = new Audio();
+    narrEl.preload = 'auto'; clipEl.preload = 'auto';
+    let narrId = null;
+    const warmed = {};
+    function preload(id) {              // warms the browser cache for the next page
+      if (!LAYOUT.audio[id] || warmed[id] || window.BUNDLE_ASSETS) return;
+      warmed[id] = true;
+      const w = new Audio(); w.preload = 'auto'; w.src = audio(id);
     }
-  }
-
-  const cloudSvg = (w) => `
-    <svg viewBox="0 0 220 90" width="${w}" xmlns="http://www.w3.org/2000/svg">
-      <g fill="#ffffff" stroke="#23315f" stroke-width="4" stroke-linejoin="round" opacity="0.9">
-        <ellipse cx="60" cy="58" rx="52" ry="26"/>
-        <ellipse cx="120" cy="44" rx="46" ry="30"/>
-        <ellipse cx="168" cy="60" rx="44" ry="22"/>
-      </g>
-    </svg>`;
-
-  function buildAtmosphere(a) {
-    atmo.innerHTML = '';
-    if (!a) return;
-    if (a.type === 'night') {
-      for (let i = 0; i < 28; i++) {
-        const s = document.createElement('div');
-        s.className = 'twinkle';
-        s.style.left = (Math.random() * 96 + 2) + '%';
-        s.style.top  = (Math.random() * 30 + 2) + '%';
-        s.style.animationDelay = (Math.random() * 2.6) + 's';
-        s.style.animationDuration = (2 + Math.random() * 2.4) + 's';
-        atmo.appendChild(s);
-      }
-      for (let i = 0; i < 7; i++) {
-        const f = document.createElement('div');
-        f.className = 'firefly';
-        f.style.left = (Math.random() * 80 + 8) + '%';
-        f.style.top  = (Math.random() * 30 + 55) + '%';
-        f.style.animationDelay = (Math.random() * 6) + 's, ' + (Math.random() * 2.1) + 's';
-        f.style.animationDuration = (9 + Math.random() * 6) + 's, ' + (1.6 + Math.random() * 1.2) + 's';
-        atmo.appendChild(f);
-      }
-      return;
+    function stop() {
+      narrEl.onended = null;
+      if (narrId) { try { narrEl.pause(); } catch (e) {} }
+      narrId = null;
+      Sfx.setDucked(false);
     }
-    if (a.type === 'day' && a.sun) {
-      const [cx, cy] = a.sun;
-      const ratio = 3508 / 2480;
-      const glow = document.createElement('div');
-      glow.className = 'sun-glow';
-      glow.style.width = '32%'; glow.style.aspectRatio = '1';
-      glow.style.left = (cx - 16) + '%'; glow.style.top = (cy - 16 * ratio) + '%';
-      atmo.appendChild(glow);
-      const rays = document.createElement('div');
-      rays.className = 'sun-rays';
-      rays.style.width = '50%'; rays.style.aspectRatio = '1';
-      rays.style.left = (cx - 25) + '%'; rays.style.top = (cy - 25 * ratio) + '%';
-      atmo.appendChild(rays);
+    // returns the element; onFail is called if the browser refuses to play (no gesture yet, no audio)
+    function narrate(id, onFail) {
+      stop();
+      narrId = id;
+      narrEl.muted = muted;
+      narrEl.src = audio(id);
+      try { narrEl.currentTime = 0; } catch (e) {}
+      Sfx.setDucked(true);
+      const p = narrEl.play();
+      if (p && p.catch) p.catch(() => { if (narrId === id) { Sfx.setDucked(false); onFail(); } });
+      return narrEl;
     }
-    if (a.clouds !== false) {
-      const specs = a.type === 'sky'
-        ? [[2, '8%', 150, 80], [34, '3%', 190, 105], [66, '14%', 120, 130]]
-        : [[4, '6%', 120, 90], [60, '4%', 150, 120]];
-      specs.forEach(([left, top, w, dur], i) => {
-        const c = document.createElement('div');
-        c.className = 'cloud';
-        c.style.left = left + '%'; c.style.top = top;
-        c.style.animationDuration = dur + 's';
-        c.style.animationDelay = (-i * 25) + 's';
-        c.style.opacity = a.type === 'sky' ? .95 : .75;
-        c.innerHTML = cloudSvg(w);
-        atmo.appendChild(c);
-      });
+    function say(id) {
+      if (!LAYOUT.audio[id]) return;
+      try { clipEl.pause(); } catch (e) {}
+      clipEl.muted = muted;
+      clipEl.src = audio(id);
+      const p = clipEl.play(); if (p && p.catch) p.catch(() => {});
     }
-  }
+    function unlock() {                 // call inside a user gesture
+      clipEl.muted = true; clipEl.src = audio('p03-number');
+      const p = clipEl.play();
+      if (p && p.then) p.then(() => { clipEl.pause(); clipEl.muted = muted; }).catch(() => { clipEl.muted = muted; });
+    }
+    function setMuted(m) { narrEl.muted = m; clipEl.muted = m; }
+    function pause() { if (narrId && !narrEl.paused) narrEl.pause(); }
+    function resume() { if (narrId && narrEl.paused && !narrEl.ended) { const p = narrEl.play(); if (p && p.catch) p.catch(() => {}); } }
+    return { preload, narrate, say, stop, setMuted, pause, resume, unlock };
+  })();
+  /* ================= Scene ================= */
 
-  /* ================= Camera ================= */
-
-  function setCamera(cam, instant) {
-    if (instant) world.style.transition = 'none';
-    world.style.transformOrigin = cam ? cam.origin : '50% 50%';
-    world.style.transform = cam ? `scale(${cam.scale})` : 'none';
-    if (instant) requestAnimationFrame(() => { world.style.transition = ''; });
-  }
+  function showScene(id) { scene.src = src(id); }
 
   /* ================= Particles ================= */
 
@@ -215,193 +188,192 @@
     });
   }
 
-  /* ============ Narration: read-aloud + synced highlighting ============ */
+  /* ============ Caption panels + narration sync ============ */
 
-  let narrTimer = null, fallbackTimer = null, safetyTimer = null;
-  let speechUtterance = null;
-  let chosenVoice = null;
+  let panels = [];       // [{ id, el, boxes: [el], first: global index of its first word }]
+  let words = [];        // [{ el, panel }] in reading order, for the current page
+  let narrToken = 0;
   let lastNarration = null;
-  let wordPending = false;
+  let litIndex = -1;
 
-  const FEMALE = /female|aria|jenny|michelle|molly|hayley|clara|natasha|libby|sonia|maisie|zira|hazel|heera|susan|samantha|karen|moira|fiona|tessa|victoria|allison|ava|kate|serena|catherine|olivia|freya|nicola|emma|joanna|amy|salli|kimberly|kendra|ivy|nicole|raveena|sara|emily/i;
-  const MALE = /\bmale|guy|mitchell|william|david|mark|james|ryan|thomas|george|daniel|alex|fred|oliver|liam|noah|connor|brian|christopher|eric|roger|steffan|sean|richard|matthew|joey|russell|brandon/i;
+  function buildCaptions(page) {
+    captions.innerHTML = '';
+    panels = []; words = [];
+    let first = 0;
+    (page.caption || []).forEach((cid, k) => {
+      const c = LAYOUT.captions[cid];
+      const el = document.createElement('div');
+      el.className = 'panel' + (k === 0 ? ' show' : '');
+      el.dataset.id = cid;
+      placeAt(el, c);
+      const img = document.createElement('img');
+      img.src = asset(IMG + c.file); img.alt = '';
+      el.appendChild(img);
+      const boxes = c.words.map(([x, y, w, h]) => {
+        const b = document.createElement('div');
+        b.className = 'w';
+        b.style.left = x + '%'; b.style.top = y + '%'; b.style.width = w + '%'; b.style.height = h + '%';
+        el.appendChild(b);
+        return b;
+      });
+      const panel = { id: cid, el, boxes, first };
+      boxes.forEach(b => words.push({ el: b, panel }));
+      first += boxes.length;
+      panels.push(panel);
+      captions.appendChild(el);
+      el.addEventListener('pointerdown', () => {
+        if (turning || !lastNarration) return;
+        Sfx.tap();
+        narrate(lastNarration.page, lastNarration.done);
+      });
+    });
+  }
 
-  function scoreVoice(v) {
-    const name = v.name || '';
-    const lang = (v.lang || '').toLowerCase().replace('_', '-');
-    let s = 0;
-    if (!lang.startsWith('en')) s -= 10;
-    if (lang.startsWith('en-nz')) s += 3;
-    else if (lang.startsWith('en-au')) s += 2.4;
-    else if (lang.startsWith('en-gb')) s += 2;
-    else if (lang.startsWith('en-us')) s += 1.2;
-    if (/female/i.test(name)) s += 4;
-    else if (FEMALE.test(name)) s += 3;
-    if (MALE.test(name) && !/female/i.test(name)) s -= 4;
-    if (/natural|neural|online|premium|enhanced/i.test(name)) s += 1.5;
-    if (/google/i.test(name)) s += 0.5;
-    return s;
+  function showPanel(panel) {
+    panels.forEach(p => p.el.classList.toggle('show', p === panel));
   }
-  function pickVoice() {
-    if (!('speechSynthesis' in window)) return null;
-    const vs = speechSynthesis.getVoices();
-    if (!vs.length) return null;
-    let best = vs[0], bs = -Infinity;
-    vs.forEach(v => { const s = scoreVoice(v); if (s > bs) { bs = s; best = v; } });
-    return best;
+
+  function light(i, page) {
+    if (i === litIndex) return;
+    if (litIndex >= 0 && words[litIndex]) words[litIndex].el.classList.remove('lit');
+    const prev = litIndex;
+    litIndex = i;
+    if (i >= 0 && words[i]) {
+      words[i].el.classList.add('lit');
+      showPanel(words[i].panel);
+    }
+    // fire every event crossed since the last lit word (a slow frame may skip several words)
+    (page.events || []).forEach(ev => { if (ev.word > prev && ev.word <= i) runEffect(ev); });
+    if (SHOW_TL) tlLight(i);
   }
-  if ('speechSynthesis' in window) {
-    chosenVoice = pickVoice();
-    speechSynthesis.onvoiceschanged = () => { chosenVoice = pickVoice(); };
+
+  // timeline strip for ?envelope=1 — the derived word spans with a moving playhead
+  let tlWords = [], tlHead = null;
+  function buildTimeline(tm) {
+    timeline.innerHTML = ''; tlWords = [];
+    if (!SHOW_TL) return;
+    timeline.classList.remove('hidden');
+    tm.words.forEach(([s, e]) => {
+      const d = document.createElement('div'); d.className = 'tw';
+      d.style.left = (s / tm.duration * 100) + '%'; d.style.width = ((e - s) / tm.duration * 100) + '%';
+      timeline.appendChild(d); tlWords.push(d);
+    });
+    tlHead = document.createElement('div'); tlHead.className = 'head'; timeline.appendChild(tlHead);
   }
+  function tlLight(i) { tlWords.forEach((d, k) => d.classList.toggle('lit', k === i)); }
+  function tlHeadAt(t, dur) { if (tlHead) tlHead.style.left = (t / dur * 100) + '%'; }
 
   function stopNarration() {
-    clearInterval(narrTimer);   narrTimer = null;
-    clearTimeout(fallbackTimer); fallbackTimer = null;
-    clearTimeout(safetyTimer);   safetyTimer = null;
-    if ('speechSynthesis' in window) speechSynthesis.cancel();
-    speechUtterance = null;
-    wordPending = false;
+    narrToken++;
+    Voice.stop();
+    if (litIndex >= 0 && words[litIndex]) words[litIndex].el.classList.remove('lit');
+    litIndex = -1;
   }
 
-  function canSpeak() {
-    return ('speechSynthesis' in window) && !muted && !FAST;
-  }
-
-  function narrate(text, done) {
+  // Play the page's recording and light words from its playhead. Falls back to a silent
+  // read-along at the same timings if the browser will not play audio.
+  function narrate(page, done) {
     stopNarration();
-    lastNarration = { text, done };
-    caption.classList.remove('hidden');
-    caption.classList.toggle('long', text.length > 120);
-
-    const tokens = text.split(/\s+/);
-    capText.innerHTML = tokens.map(w => `<span class="w">${w}</span>`).join(' ');
-    const words = [...capText.querySelectorAll('.w')];
-    const starts = [];
-    let pos = 0;
-    tokens.forEach(t => { const idx = text.indexOf(t, pos); starts.push(idx); pos = idx + t.length; });
-
-    const isWordy = (el) => /[\p{L}\p{N}]/u.test(el.textContent);
-    const light = (i) => {
-      words.forEach(w => w.classList.remove('lit'));
-      if (i >= 0 && i < words.length) words[i].classList.add('lit');
-    };
+    lastNarration = { page, done };
+    const token = narrToken;
+    const tm = LAYOUT.timings[page.id] || { duration: 0, words: [] };
+    const starts = tm.words.map(w => w[0]);
+    showPanel(panels[0]);
+    buildTimeline(tm);
     let finished = false;
+    let clock = null;
     const finish = () => {
-      if (finished) return;
+      if (finished || token !== narrToken) return;
       finished = true;
-      clearInterval(narrTimer); narrTimer = null;
-      clearTimeout(fallbackTimer); clearTimeout(safetyTimer);
-      speechUtterance = null;
-      words.forEach(w => w.classList.remove('lit'));
+      clearInterval(pump); clearTimeout(safety);
+      if (litIndex >= 0 && words[litIndex]) words[litIndex].el.classList.remove('lit');
+      litIndex = -1;
+      Sfx.setDucked(false);
       if (done) done();
     };
-
-    // timed highlighting — fallback, and pacer when the voice gives no word events
-    const startTimedHighlight = (finishWhenDone) => {
-      clearInterval(narrTimer);
-      let i = 0;
-      narrTimer = setInterval(() => {
-        while (i < words.length && !isWordy(words[i])) i++;
-        if (i >= words.length) { clearInterval(narrTimer); if (finishWhenDone) finish(); return; }
-        light(i); i++;
-      }, FAST ? 25 : 330);
+    const indexAt = (t) => {
+      let i = -1;
+      for (let k = 0; k < starts.length; k++) { if (starts[k] <= t) i = k; else break; }
+      return i;
     };
-
-    if (!canSpeak()) { startTimedHighlight(true); return; }
-
-    const u = new SpeechSynthesisUtterance(text);
-    speechUtterance = u;
-    if (!chosenVoice) chosenVoice = pickVoice();
-    if (chosenVoice) { u.voice = chosenVoice; u.lang = chosenVoice.lang; }
-    u.rate = 0.88;
-    u.pitch = 1.08;
-
-    let sawBoundary = false;
-    u.onboundary = (e) => {
-      if (e.name && e.name !== 'word') return;
-      sawBoundary = true;
-      clearInterval(narrTimer);
-      let i = starts.findIndex((s, k) => e.charIndex >= s && e.charIndex < s + tokens[k].length + 1);
-      if (i === -1) i = starts.filter(s => s <= e.charIndex).length - 1;
-      if (i >= 0 && isWordy(words[i])) light(i);
+    const tick = () => {
+      if (finished || token !== narrToken || !clock) return;
+      const t = clock();
+      light(indexAt(t), page);
+      if (SHOW_TL) tlHeadAt(t, tm.duration);
+      if (t >= tm.duration) finish();
     };
-    u.onend = () => { if (speechUtterance === u) finish(); };
-    u.onerror = () => { if (speechUtterance === u) startTimedHighlight(true); };
+    let pump = setInterval(tick, 40);
+    const raf = () => { if (!finished && token === narrToken) { tick(); requestAnimationFrame(raf); } };
+    requestAnimationFrame(raf);
+    let safety = null;
 
-    speechSynthesis.cancel();
-    try { speechSynthesis.speak(u); }
-    catch (err) { startTimedHighlight(true); return; }
+    const startSim = () => {
+      const speed = FAST ? 30 : 1;
+      const t0 = performance.now();
+      let paused = 0, pauseAt = null;
+      clock = () => ((pauseAt !== null ? pauseAt : performance.now()) - t0 - paused) / 1000 * speed;
+      simPause = () => { if (pauseAt === null) pauseAt = performance.now(); };
+      simResume = () => { if (pauseAt !== null) { paused += performance.now() - pauseAt; pauseAt = null; } };
+      safety = setTimeout(finish, tm.duration / speed * 1000 + 150);
+    };
+    if (FAST || !LAYOUT.audio[page.narration]) { startSim(); return; }
 
-    fallbackTimer = setTimeout(() => {
-      if (!sawBoundary && !finished) {
-        const speaking = speechSynthesis.speaking || speechSynthesis.pending;
-        startTimedHighlight(!speaking);
-      }
-    }, 1100);
-    safetyTimer = setTimeout(finish, tokens.length * 650 + 7000);
+    const a = Voice.narrate(page.narration, () => { if (!finished && token === narrToken) startSim(); });
+    clock = () => a.currentTime;
+    a.onended = () => finish();
+    safety = setTimeout(finish, (tm.duration + 4) * 1000);
   }
-
-  // speak a single word (fruit names, numbers) without touching the caption
-  function say(text) {
-    if (!canSpeak() || wordPending) return;
-    const u = new SpeechSynthesisUtterance(text);
-    if (chosenVoice) { u.voice = chosenVoice; u.lang = chosenVoice.lang; }
-    u.rate = 0.85; u.pitch = 1.12;
-    wordPending = true;
-    u.onend = u.onerror = () => { wordPending = false; };
-    try { speechSynthesis.speak(u); } catch (e) { wordPending = false; }
-  }
-
-  caption.addEventListener('pointerdown', () => {
-    if (lastNarration) { Sfx.tap(); narrate(lastNarration.text, lastNarration.done); }
-  });
+  let simPause = () => {}, simResume = () => {};
 
   /* ================= Mute ================= */
 
   function setMuted(m) {
     muted = m;
     Sfx.setMuted(m);
+    Voice.setMuted(m);
     muteBtn.setAttribute('aria-pressed', m ? 'true' : 'false');
-    if (m && 'speechSynthesis' in window) speechSynthesis.cancel();
   }
   muteBtn.addEventListener('click', () => { Sfx.unlock(); setMuted(!muted); if (!muted) Sfx.tap(); });
 
-  /* ================= Arrow & task bookkeeping ================= */
+  /* ================= Navigation state ================= */
 
-  function disarmArrow() {
-    arrowArmed = false;
-    arrowBtn.disabled = true;
-    arrowBtn.classList.remove('hidden');
+  function setNav() {
+    const onPage = pageIndex >= 0;
+    backBtn.classList.toggle('hidden', !onPage);
+    nextBtn.classList.toggle('hidden', !onPage);
+    backBtn.disabled = !(onPage && narrated);
+    nextBtn.disabled = !(onPage && nextArmed);
+    nextBtn.classList.toggle('armed', onPage && nextArmed);
   }
-  function armArrow() {
-    if (arrowArmed) return;
-    arrowArmed = true;
-    arrowBtn.disabled = false;
+
+  function armNext() {
+    if (nextArmed) return;
+    nextArmed = true;
+    phase = 'complete';
+    pending.forEach(el => el.classList.remove('pending'));
+    setNav();
     Sfx.chime();
-    const [cx, cy] = elCenter(arrowBtn);
+    const [cx, cy] = elCenter(nextBtn);
     sparkleBurst(cx, cy, '#fff3b0', 14);
     resetIdleHint();
   }
-  function checkArrow() {
-    if (mainDone && tasksDone >= tasksNeeded && afterDone) armArrow();
-  }
+  function checkArmed() { if (narrated && tasksDone >= tasksNeeded) armNext(); }
+
   function maybeAfter(page) {
-    if (!mainDone || tasksDone < tasksNeeded || afterStarted) return;
+    if (!narrated || tasksDone < tasksNeeded || afterStarted) return;
     afterStarted = true;
-    (page.after || []).forEach(runAfterEffect);
-    if (page.cameraAfter) setCamera(page.cameraAfter, false);
-    if (page.afterText) narrate(page.afterText, () => { afterDone = true; checkArrow(); });
-    else { afterDone = true; checkArrow(); }
+    (page.after || []).forEach(runEffect);
+    checkArmed();
   }
   function taskDone(page, el) {
     tasksDone++;
-    if (el) pending = pending.filter(p => p !== el);
-    if (el) el.classList.remove('pending');
+    if (el) { pending = pending.filter(p => p !== el); el.classList.remove('pending'); }
     maybeAfter(page);
+    checkArmed();
   }
 
-  function runAfterEffect(eff) {
+  function runEffect(eff) {
     const sp = document.getElementById('obj-' + eff.target);
     if (!sp) return;
     const anim = sp.querySelector('.anim');
@@ -420,8 +392,18 @@
     const s = stage.getBoundingClientRect();
     const hx = r.left + r.width * 0.58 - s.left;
     const hy = r.top + r.height * 0.55 - s.top;
-    hand.style.left = Math.min(hx, s.width * 0.92) + 'px';
+    hand.style.left = Math.min(hx, s.width * 0.93) + 'px';
     hand.style.top  = Math.min(hy, s.height * 0.9) + 'px';
+    hand.classList.remove('hidden');
+    hand.classList.remove('tapping');
+    void hand.offsetWidth;
+    hand.classList.add('tapping');
+    setTimeout(hideHand, 1900);
+  }
+
+  function showHandOnCover() {
+    const r = LAYOUT.img[STORY.cover.hand];
+    Object.assign(hand.style, { left: (r.x / SCENE_W * 100) + '%', top: (r.y / SCENE_H * 100) + '%' });
     hand.classList.remove('hidden');
     hand.classList.remove('tapping');
     void hand.offsetWidth;
@@ -434,22 +416,22 @@
     hideHand();
     if (FAST) return;
     idleTimer = setTimeout(() => {
-      let target = pending[0];
-      if (target) {
+      if (pageIndex < 0) { showHandOnCover(); resetIdleHint(); return; }
+      if (phase === 'invite' && pending[0]) {
+        const target = pending[0];
         const anim = target.closest('.sprite') ? target.closest('.sprite').querySelector('.anim') : target;
         anim.classList.remove('anim-hint'); void anim.offsetWidth; anim.classList.add('anim-hint');
         showHandAt(target);
-      } else if (arrowArmed) {
-        target = arrowBtn;
-        showHandAt(arrowBtn);
+      } else if (nextArmed) {
+        showHandAt(nextBtn);
       }
       resetIdleHint();
-    }, 4500);
+    }, pageIndex < 0 ? 4000 : 5000);
   }
 
   /* ================= Voronoi cells for multi-fruit sprites ================= */
 
-  function clipPoly(poly, a, b, c) {      // keep side where a*x + b*y <= c
+  function clipPoly(poly, a, b, c) {
     const out = [];
     for (let i = 0; i < poly.length; i++) {
       const p = poly[i], q = poly[(i + 1) % poly.length];
@@ -489,24 +471,38 @@
     const el = document.createElement('div');
     el.className = 'sprite';
     el.id = 'obj-' + obj.id;
-    Object.assign(el.style, obj.rect);
+    Object.assign(el.style, obj.rect || rectOf(obj.layout));
     if (obj.z) el.style.zIndex = obj.z;
     const anim = document.createElement('div'); anim.className = 'anim';
     const body = document.createElement('div'); body.className = 'body';
     if (obj.origin) { anim.style.transformOrigin = obj.origin; body.style.transformOrigin = obj.origin; }
-    if (!(obj.tap && obj.tap.type === 'bite')) {
+    if (obj.layout && !(obj.tap && obj.tap.type === 'bite')) {
       const img = document.createElement('img');
-      img.src = obj.img; img.alt = '';
+      img.src = src(obj.layout); img.alt = '';
       body.appendChild(img);
     }
     anim.appendChild(body);
     el.appendChild(anim);
     if (obj.hidden) el.classList.add('is-hidden');
+    if (obj.reveal) el.classList.add('reveal', 'is-veiled');
     if (obj.breathe && !obj.hidden) body.classList.add('anim-breathe');
+    if (obj.tap) {
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('role', 'button');
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fireTap(el.querySelector('.cell') || el); }
+      });
+    }
     return el;
   }
 
-  function markPending(el) { el.classList.add('tappable', 'pending'); pending.push(el); }
+  function fireTap(el) {
+    const [x, y] = elCenter(el);
+    el.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true, pointerType: 'touch' }));
+  }
+
+  function markPending(el) { el.classList.add('tappable'); pending.push(el); if (phase !== 'narrate' && phase !== 'settle') el.classList.add('pending'); }
+  function startInviting() { pending.forEach(el => el.classList.add('pending')); }
 
   /* ---- tap behaviours ---- */
 
@@ -530,7 +526,7 @@
       playAnim(anim, 'anim-pop');
       Sfx.pop();
       sparkleBurst(e.clientX, e.clientY, obj.tap.sparkColor || '#fff3b0', 8);
-      say(obj.tap.text);
+      Voice.say(obj.tap.say);
       resetIdleHint();
     });
   }
@@ -539,10 +535,11 @@
     const body = sp.querySelector('.body');
     const cells = obj.tap.cells || [[50, 50]];
     const polys = cells.length > 1 ? voronoi(cells) : [null];
+    const img = src(obj.layout), mask = src(obj.tap.mask);
     cells.forEach((c, i) => {
       const cell = document.createElement('div');
       cell.className = 'cell';
-      cell.style.backgroundImage = `url("${obj.img}")`;
+      cell.style.backgroundImage = `url("${img}")`;
       if (polys[i]) cell.style.clipPath = polys[i];
       cell.style.transformOrigin = c[0] + '% ' + c[1] + '%';
       body.appendChild(cell);
@@ -552,16 +549,17 @@
         resetIdleHint();
         if (bitten) return;
         bitten = true;
+        cell.classList.remove('pending');
         cell.classList.remove('anim-chomp'); void cell.offsetWidth; cell.classList.add('anim-chomp');
         later(140, () => {
           cell.classList.add('bitten');
-          cell.style.webkitMaskImage = `url("${obj.tap.mask}")`;
-          cell.style.maskImage = `url("${obj.tap.mask}")`;
+          cell.style.webkitMaskImage = `url("${mask}")`;
+          cell.style.maskImage = `url("${mask}")`;
         });
         Sfx.munch();
         sparkleBurst(e.clientX, e.clientY, obj.tap.sparkColor || '#fff3b0', 8);
         crumbBurst(e.clientX, e.clientY, obj.tap.crumbColor || '#8a5a2b');
-        if (obj.tap.say) say(obj.tap.say);
+        if (obj.tap.say) Voice.say(obj.tap.say);
         taskDone(page, cell);
       });
     });
@@ -583,7 +581,6 @@
         sparkleBurst(e.clientX, e.clientY, '#fff3b0');
         return;
       }
-      // --- the big POP ---
       pending = pending.filter(p => p !== sp); sp.classList.remove('pending', 'tappable');
       Sfx.crackPop();
       sparkleBurst(e.clientX, e.clientY, '#ffd94d');
@@ -605,6 +602,21 @@
     });
   }
 
+  function setupReveal(page, obj, sp) {
+    let done = false;
+    markPending(sp);
+    sp.addEventListener('pointerdown', (e) => {
+      resetIdleHint();
+      (Sfx[obj.tap.sound] || Sfx.munch)();
+      sparkleBurst(e.clientX, e.clientY, obj.tap.sparkColor || '#fff3b0', 8);
+      crumbBurst(e.clientX, e.clientY, obj.tap.crumbColor || '#8a5a2b');
+      if (done) return;
+      done = true;
+      sp.classList.remove('is-veiled');
+      later(500, () => taskDone(page, sp));
+    });
+  }
+
   function setupGrow(page, obj, sp) {
     const anim = sp.querySelector('.anim');
     let done = false;
@@ -614,6 +626,7 @@
       if (done) { playAnim(sp.querySelector('.body'), 'anim-happy'); Sfx.boing(); sparkleBurst(e.clientX, e.clientY, '#ffe98a', 8); return; }
       done = true;
       anim.classList.add('anim-grow');
+      playAnim(sp.querySelector('.body'), 'anim-happy');
       Sfx.grow();
       sparkleBurst(e.clientX, e.clientY, '#ffe98a', 16);
       later(900, () => { const [cx, cy] = elCenter(sp); sparkleBurst(cx, cy, '#fff3b0', 12); });
@@ -638,34 +651,33 @@
   function setupEmerge(page, obj, sp, els) {
     const anim = sp.querySelector('.anim');
     const bf = els[obj.tap.butterfly];
-    let taps = 0;
+    let done = false;
     markPending(sp);
     sp.addEventListener('pointerdown', (e) => {
-      if (taps >= 3) return;
-      taps++;
+      if (done) return;
+      done = true;
       resetIdleHint();
-      if (taps < 3) {
-        playAnim(anim, 'anim-shake');
-        Sfx.wobble(taps);
-        sparkleBurst(e.clientX, e.clientY, '#e6ffcc');
-        return;
-      }
       pending = pending.filter(p => p !== sp); sp.classList.remove('pending', 'tappable');
-      Sfx.crackPop();
-      sparkleBurst(e.clientX, e.clientY, '#ffd94d', 16);
-      playAnim(anim, 'anim-crack');
-      later(300, () => flyButterfly(page, sp, bf.el, bf.obj));
+      playAnim(anim, 'anim-shake');
+      Sfx.wobble(2);
+      sparkleBurst(e.clientX, e.clientY, '#e6ffcc');
+      later(550, () => {
+        Sfx.crackPop();
+        sparkleBurst(e.clientX, e.clientY, '#ffd94d', 16);
+        if (!obj.tap.keep) playAnim(anim, 'anim-crack');
+        later(300, () => flyButterfly(page, sp, bf.el, bf.obj));
+      });
     });
   }
 
   function flyButterfly(page, fromEl, bfEl, bfObj) {
     const from = fromEl.getBoundingClientRect();
     const wr = sprites.getBoundingClientRect();
-    // start & end centres in % of the world
     const x0 = (from.left + from.width / 2 - wr.left) / wr.width * 100;
     const y0 = (from.top + from.height * 0.35 - wr.top) / wr.height * 100;
-    const w = pct(bfObj.rect.width), h = pct(bfObj.rect.height);
-    const x1 = pct(bfObj.rect.left) + w / 2, y1 = pct(bfObj.rect.top) + h / 2;
+    const rect = bfObj.rect || rectOf(bfObj.layout);
+    const w = pct(rect.width), h = pct(rect.height);
+    const x1 = pct(rect.left) + w / 2, y1 = pct(rect.top) + h / 2;
     const anim = bfEl.querySelector('.anim'), body = bfEl.querySelector('.body');
     bfEl.classList.remove('is-hidden');
     body.classList.add('anim-flap');
@@ -676,12 +688,11 @@
     later(900, () => Sfx.flutter(8));
     later(1800, () => Sfx.flutter(8));
     later(2700, () => Sfx.glitter());
-    // safety net: if frames stop (hidden tab, headless), land anyway
-    later(dur + 600, () => { if (!landed) step(t0 + dur); });
+    later(dur + 600, () => { if (!landed) step(t0 + dur); });    // frames may stall (hidden tab, headless)
     const step = (now) => {
       if (landed) return;
       let t = Math.min(1, (now - t0) / dur);
-      const e = t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;      // ease in-out
+      const e = t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
       const cx = x0 + (x1 - x0) * e;
       const cy = y0 + (y1 - y0) * e - Math.sin(t * Math.PI) * 16 + Math.sin(t * Math.PI * 5) * 1.6;
       const s = 0.18 + 0.82 * e;
@@ -722,29 +733,31 @@
       playAnim(anim, obj.tap.anim || 'anim-wobble-sm');
       (Sfx[obj.tap.sound] || Sfx.boing)();
       sparkleBurst(e.clientX, e.clientY, obj.tap.sparkColor || '#ffe98a', 8);
-      if (obj.tap.say) say(obj.tap.say);
+      if (obj.tap.say) Voice.say(obj.tap.say);
       resetIdleHint();
     });
   }
 
   /* ================= Page rendering ================= */
 
+  // Every entry — forwards, backwards, or replay — runs the page from the top.
   function loadPage(idx) {
     const page = STORY.pages[idx];
     pageIndex = idx;
     pageToken++;
+    runs[idx] = (runs[idx] || 0) + 1;
     tasksNeeded = 0; tasksDone = 0;
-    mainDone = false; afterStarted = false; afterDone = false;
+    narrated = false; afterStarted = false; nextArmed = false;
+    phase = 'settle';
     pending = [];
     sprites.innerHTML = '';
     fx.innerHTML = '';
     hideHand();
-    disarmArrow();
     document.body.classList.remove('on-cover');
+    setNav();
 
-    showScene(page.bg, !!page.crossfade);
-    buildAtmosphere(page.atmosphere);
-    setCamera(page.camera, true);
+    showScene(page.bg);
+    buildCaptions(page);
     preloadPage(STORY.pages[idx + 1]);
 
     const els = {};
@@ -758,12 +771,12 @@
       const sp = els[obj.id].el;
       const tap = obj.tap;
       if (!tap) return;
-      const required = tap.required !== false;
       switch (tap.type) {
-        case 'shake':  if (required) tasksNeeded++; setupShake(page, obj, sp); break;
+        case 'shake':  tasksNeeded++; setupShake(page, obj, sp); break;
         case 'say':    setupSay(page, obj, sp); break;
         case 'bite':   tasksNeeded += (tap.cells || [[50, 50]]).length; setupBite(page, obj, sp); break;
         case 'hatch':  tasksNeeded++; setupHatch(page, obj, sp, els); break;
+        case 'reveal': tasksNeeded++; setupReveal(page, obj, sp); break;
         case 'grow':   tasksNeeded++; setupGrow(page, obj, sp); break;
         case 'sway':   tasksNeeded++; setupSway(page, obj, sp); break;
         case 'emerge': tasksNeeded++; setupEmerge(page, obj, sp, els); break;
@@ -778,144 +791,265 @@
       sprites.appendChild(z);
       z.addEventListener('pointerdown', (e) => {
         if (h.sound && Sfx[h.sound]) Sfx[h.sound]();
-        if (h.say) say(h.say);
         sparkleBurst(e.clientX, e.clientY, h.sparkColor || '#fff3b0');
         resetIdleHint();
       });
     });
 
-    later(page.crossfade ? 900 : 350, () => {
-      narrate(page.text, () => { mainDone = true; maybeAfter(page); checkArrow(); });
+    later(350, () => {
+      phase = 'narrate';
+      narrate(page, () => {
+        narrated = true;
+        phase = tasksDone >= tasksNeeded ? 'complete' : 'invite';
+        setNav();
+        startInviting();
+        maybeAfter(page);
+        checkArmed();
+        resetIdleHint();
+      });
     });
     resetIdleHint();
   }
 
   /* ================= Navigation ================= */
 
-  let turning = false;
-  function turnTo(idx, instant) {
+  function turnTo(idx, opts = {}) {
     if (turning) return;
     turning = true;
     stopNarration();
+    hideHand();
+    const instant = !!opts.instant;
     if (!instant) {
       Sfx.whoosh();
-      turner.classList.remove('turning'); void turner.offsetWidth; turner.classList.add('turning');
+      turner.classList.remove('turning', 'back'); void turner.offsetWidth;
+      turner.classList.add('turning'); if (opts.back) turner.classList.add('back');
       world.classList.add('world-out');
     }
-    caption.classList.add('hidden');
+    captions.querySelectorAll('.panel').forEach(p => p.classList.remove('show'));
     setTimeout(() => {
       world.classList.remove('world-out');
       world.classList.add('world-in');
       loadPage(idx);
-      setTimeout(() => { world.classList.remove('world-in'); turning = false; }, 700);
-    }, instant ? 0 : 430);
+      setTimeout(() => { world.classList.remove('world-in'); turning = false; }, FAST ? 60 : 700);
+    }, instant ? 0 : (FAST ? 40 : 430));
+  }
+
+  function showCover() {
+    stopNarration();
+    pageIndex = -1; phase = 'cover'; nextArmed = false; narrated = false;
+    sprites.innerHTML = ''; captions.innerHTML = '';
+    hideHand();
+    setNav();
+    document.body.classList.add('on-cover');
+    splash.style.display = '';
+    splash.classList.remove('gone');
+    resetIdleHint();
   }
 
   function showEnding() {
     stopNarration();
-    caption.classList.add('hidden');
-    arrowBtn.classList.add('hidden');
+    captions.innerHTML = '';
+    backBtn.classList.add('hidden'); nextBtn.classList.add('hidden');
     hideHand();
+    phase = 'ending';
     ending.classList.remove('hidden');
     Sfx.glitter();
     later(300, () => { const r = ending.getBoundingClientRect(); sparkleBurst(r.left + r.width / 2, r.top + r.height * .4, '#ffb347', 24); });
-    later(500, () => { if (canSpeak()) say('The end!'); });
   }
 
-  arrowBtn.addEventListener('click', () => {
-    if (arrowBtn.disabled) return;
+  nextBtn.addEventListener('click', () => {
+    if (nextBtn.disabled || turning) return;
     Sfx.tap();
-    hideHand();
     const next = pageIndex + 1;
     if (next < STORY.pages.length) turnTo(next);
     else showEnding();
   });
 
+  backBtn.addEventListener('click', () => {
+    if (backBtn.disabled || turning) return;
+    Sfx.tap();
+    if (pageIndex === 0) { Sfx.whoosh(); showCover(); }
+    else turnTo(pageIndex - 1, { back: true });
+  });
+
   againBtn.addEventListener('click', () => {
     Sfx.tap();
     ending.classList.add('hidden');
-    pageIndex = -1;
-    sprites.innerHTML = ''; atmo.innerHTML = '';
-    document.body.classList.add('on-cover');
-    splash.classList.remove('gone');
+    showCover();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' && !nextBtn.disabled && pageIndex >= 0) { e.preventDefault(); nextBtn.click(); }
+    else if (e.key === 'ArrowLeft' && !backBtn.disabled && pageIndex >= 0) { e.preventDefault(); backBtn.click(); }
+    else if ((e.key === 'Enter' || e.key === ' ') && pageIndex < 0 && !splash.classList.contains('gone') && document.activeElement === document.body) { e.preventDefault(); beginBtn.click(); }
   });
 
   /* ================= Cover ================= */
+
+  // the designer's Start arrow and hand, placed where drawn
+  placeAt(beginBtn, LAYOUT.img[STORY.cover.arrow]);
+  placeAt(backBtn, LAYOUT.img['arrow-back']);
+  placeAt(nextBtn, LAYOUT.img['arrow-next']);
 
   let starting = false;
   function startStory() {
     if (starting) return;
     starting = true;
     Sfx.unlock();
+    if (!FAST) Voice.unlock();
     Sfx.chirp();
+    hideHand(); clearTimeout(idleTimer);
     const [cx, cy] = elCenter(beginBtn);
     sparkleBurst(cx, cy, '#fff3b0', 18);
-    if (canSpeak()) say(STORY.title);
-    later(FAST ? 50 : 1300, () => {
-      splash.classList.add('gone');
-      setTimeout(() => { turnTo(0); starting = false; }, 300);
-    });
+    const go = () => { splash.classList.add('gone'); setTimeout(() => { turnTo(0, { instant: true }); starting = false; }, FAST ? 30 : 300); };
+    if (FAST) { later(50, go); return; }
+    // "A Feijoa on Monday", in the child's voice, then the first page
+    const dur = (LAYOUT.timings.cover && LAYOUT.timings.cover.duration) || 3;
+    let went = false;
+    const once = () => { if (!went) { went = true; go(); } };
+    const a = Voice.narrate(STORY.cover.narration, () => setTimeout(once, 900));
+    a.onended = once;
+    setTimeout(once, (dur + 1.5) * 1000);
   }
   beginBtn.addEventListener('pointerdown', () => Sfx.unlock());
   beginBtn.addEventListener('click', startStory);
-
   window.addEventListener('pointerdown', () => Sfx.unlock(), { once: true });
 
-  // preload the first pages while the cover is up
   preloadPage(STORY.pages[0]); preloadPage(STORY.pages[1]);
+  Voice.preload(STORY.cover.narration);
+  resetIdleHint();
+
+  /* ================= Portrait phones ================= */
+
+  function checkOrientation() {
+    const portrait = window.innerHeight > window.innerWidth && Math.min(window.innerWidth, window.innerHeight) < 600;
+    const was = document.body.classList.contains('portrait');
+    document.body.classList.toggle('portrait', portrait);
+    if (portrait && !was) { Voice.pause(); simPause(); }
+    if (!portrait && was) { Voice.resume(); simResume(); }
+  }
+  window.addEventListener('resize', checkOrientation);
+  window.addEventListener('orientationchange', checkOrientation);
+  checkOrientation();
 
   /* ================= Service worker ================= */
-  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !SELFTEST) {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !SELFTEST && !window.BUNDLE_ASSETS) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
   }
 
-  /* ================= Dev helpers: ?page=N, ?selftest ================= */
+  /* ================= Dev helpers: ?page=N, ?selftest, ?rotatecheck ================= */
 
   if (params.has('page')) {
     const n = Math.max(0, Math.min(STORY.pages.length - 1, parseInt(params.get('page'), 10) || 0));
-    splash.classList.add('gone');
-    turnTo(n, true);
+    splash.classList.add('gone'); splash.style.display = 'none';
+    turnTo(n, { instant: true });
+  }
+
+  if (params.has('rotatecheck')) {
+    setTimeout(() => {
+      const shown = getComputedStyle($('#rotate')).display !== 'none';
+      document.title = shown ? 'ROTATE SHOWN' : 'ROTATE HIDDEN';
+    }, 300);
   }
 
   if (SELFTEST) {
     const report = $('#test-report');
     report.classList.remove('hidden');
     const lines = [];
+    let fails = 0;
     const log = (s) => { lines.push(s); report.textContent = lines.join('\n'); };
+    const fail = (s) => { fails++; log('FAIL: ' + s); };
+    const state = () => `[page ${pageIndex} phase ${phase} turning ${turning} back ${backBtn.disabled ? 'off' : 'on'} next ${nextBtn.disabled ? 'off' : 'on'} tasks ${tasksDone}/${tasksNeeded}]`;
+    window.addEventListener('error', (e) => fail(`js error: ${e.message} @ ${(e.filename || '').split('/').pop()}:${e.lineno}`));
+    window.addEventListener('unhandledrejection', (e) => fail('unhandled rejection: ' + (e.reason && e.reason.message || e.reason)));
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    const fire = (el) => {
-      const [x, y] = elCenter(el);
-      el.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true, pointerType: 'touch' }));
-    };
     const waitFor = async (fn, ms) => { const t0 = performance.now(); while (!fn()) { if (performance.now() - t0 > ms) return false; await sleep(30); } return true; };
+    const imagesOk = () => {
+      const all = [scene, ...sprites.querySelectorAll('img'), ...captions.querySelectorAll('img'), hand.querySelector('img'), backBtn.querySelector('img'), nextBtn.querySelector('img')];
+      return all.every(im => im.complete && im.naturalWidth > 0);
+    };
+    const cellsOk = () => [...sprites.querySelectorAll('.cell')].every(c => { const u = c.style.backgroundImage.match(/url\("(.+)"\)/); return u && imgCache[u[1]] ? imgCache[u[1]].naturalWidth > 0 : true; });
+
+    async function runPage(i, expectBack) {
+      const ok = await waitFor(() => pageIndex === i && !turning, 4000);
+      if (!ok) { fail(`page ${i} did not load ` + state()); return; }
+      const page = STORY.pages[i];
+      // 1. while narrating, neither arrow is enabled
+      await waitFor(() => phase === 'narrate', 2000);
+      if (phase === 'narrate' && (!backBtn.disabled || !nextBtn.disabled)) fail(`page ${i}: an arrow is enabled during narration`);
+      // 2. caption boxes match the timings
+      const tm = LAYOUT.timings[page.id];
+      const boxes = captions.querySelectorAll('.w').length;
+      if (!tm || boxes !== tm.words.length) fail(`page ${i}: ${boxes} word boxes vs ${tm ? tm.words.length : 'no'} timings`);
+      // 3. narration ends → back enabled, next still gated while tasks remain
+      const ended = await waitFor(() => phase !== 'narrate' && phase !== 'settle', 6000);
+      if (!ended) fail(`page ${i}: narration never finished`);
+      if (backBtn.disabled) fail(`page ${i}: back arrow not enabled after narration`);
+      if (tasksNeeded > tasksDone && !nextBtn.disabled) fail(`page ${i}: next arrow enabled before the activity was done`);
+      if (i === 7 && !sprites.querySelector('.anim-queasy')) fail('page 7: stomachache reaction did not fire');
+      if (i === 7 && !captions.querySelector('.panel[data-id="p08b"]')) fail('page 7: second caption panel missing');
+      // 4. tap everything that wants a tap (multi-tap objects get several rounds)
+      for (let round = 0; round < 4; round++) {
+        const targets = [...pending];
+        for (const el of targets) { fireTap(el); await sleep(40); }
+        if (!pending.length) break;
+        await sleep(200);
+      }
+      sprites.querySelectorAll('.tappable:not(.pending)').forEach(el => fireTap(el));
+      const armed = await waitFor(() => nextArmed, 8000);
+      if (!armed) fail(`page ${i}: next arrow never armed (tasks ${tasksDone}/${tasksNeeded})`);
+      if (!nextBtn.classList.contains('armed')) fail(`page ${i}: next arrow armed but not beckoning`);
+      if (!imagesOk()) fail(`page ${i}: an image failed to load`);
+      if (!cellsOk()) fail(`page ${i}: a bite cell image failed to load`);
+      log(`page ${i} (${page.id}): tasks ${tasksDone}/${tasksNeeded}, arrow ${armed ? 'armed' : 'NOT ARMED'}, words ${boxes}, run ${runs[i]}`);
+    }
+
     (async () => {
-      let fails = 0;
       await sleep(200);
+      // audio files: every recording resolves, and every timing ends inside its recording
+      await Promise.all(Object.keys(LAYOUT.audio).map(id => new Promise(res => {
+        const a = new Audio(audio(id));
+        const t = setTimeout(() => { fail(`audio ${id}: no metadata within 8 s`); res(); }, 8000);
+        a.addEventListener('loadedmetadata', () => {
+          clearTimeout(t);
+          const tm = LAYOUT.timings[id.replace('-narration', '')];
+          if (tm && tm.words.length && tm.words[tm.words.length - 1][1] > a.duration + 0.05) fail(`audio ${id}: timings run past the recording`);
+          res();
+        });
+        a.addEventListener('error', () => { clearTimeout(t); fail(`audio ${id}: failed to load`); res(); });
+      })));
+      log(`audio: ${Object.keys(LAYOUT.audio).length} recordings checked`);
+      // timings monotonic
+      Object.entries(LAYOUT.timings).forEach(([k, tm]) => {
+        let last = 0;
+        tm.words.forEach(([s, e], n) => { if (s < last - 1e-6 || e <= s) fail(`timings ${k}: word ${n} out of order`); last = e; });
+      });
+      // portrait prompt hidden in a landscape window
+      if (getComputedStyle($('#rotate')).display !== 'none') fail('rotate prompt visible in landscape');
+
+      // cover → page 0
+      if (backBtn.offsetParent !== null) fail('back arrow visible on the cover');
       beginBtn.click();
-      await waitFor(() => pageIndex === 0, 4000);
-      for (let i = 0; i < STORY.pages.length; i++) {
-        await waitFor(() => pageIndex === i && !turning, 4000);
-        await sleep(150);
-        const page = STORY.pages[i];
-        // tap everything that wants a tap (multi-tap objects get several)
-        for (let round = 0; round < 4; round++) {
-          const targets = [...pending];
-          for (const el of targets) { fire(el); await sleep(40); }
-          if (!pending.length) break;
-          await sleep(200);
-        }
-        // exercise the non-required tappables too
-        sprites.querySelectorAll('.tappable:not(.pending)').forEach(el => fire(el));
-        const ok = await waitFor(() => arrowArmed, 8000);
-        const imgsOk = [...sprites.querySelectorAll('img')].every(im => im.complete && im.naturalWidth > 0);
-        const bgOk = activeScene.complete && activeScene.naturalWidth > 0;
-        if (!ok || !imgsOk || !bgOk) fails++;
-        log(`page ${i} (${page.id}): tasks ${tasksDone}/${tasksNeeded}, arrow ${ok ? 'armed' : 'NOT ARMED'}, sprites ${imgsOk ? 'ok' : 'MISSING'}, bg ${bgOk ? 'ok' : 'MISSING'}`);
-        arrowBtn.click();
+      await runPage(0);
+      nextBtn.click();
+      if (!await waitFor(() => pageIndex === 1 && !turning, 4000)) fail('next arrow did not reach page 1 ' + state());
+      // back: page 1 → page 0 replays from the start
+      if (!await waitFor(() => phase !== 'narrate' && phase !== 'settle', 6000)) fail('page 1 narration did not finish ' + state());
+      backBtn.click();
+      const back = await waitFor(() => pageIndex === 0 && !turning, 4000);
+      if (!back) fail('back arrow did not return to page 0');
+      if (runs[0] !== 2) fail(`page 0 was not reloaded on back (runs=${runs[0]})`);
+      if (phase === 'complete' || nextArmed) fail('page 0 did not reset on back');
+      log('back: page 1 → page 0 replayed from the top');
+      await runPage(0);
+      nextBtn.click();
+      for (let i = 1; i < STORY.pages.length; i++) {
+        await runPage(i);
+        nextBtn.click();
         await sleep(100);
       }
-      const endOk = !ending.classList.contains('hidden');
-      if (!endOk) fails++;
+      const endOk = await waitFor(() => !ending.classList.contains('hidden'), 3000);
+      if (!endOk) fail('ending not shown');
       log(`ending shown: ${endOk}`);
       log(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS');
       document.title = fails ? 'TEST FAIL' : 'TEST PASS';

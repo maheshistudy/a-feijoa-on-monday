@@ -1,32 +1,23 @@
 /* Service worker — offline support for A Feijoa on Monday.
-   Cache-first for everything in PRECACHE; runtime cache for fonts. */
+   Precaches the shell, every image and every recording listed in the generated
+   js/layout.js, then serves cache-first. Not used by the downloadable bundle
+   (which is already offline and runs from file://). */
 
-const CACHE = 'feijoa-v3';
-const IMG = [
-  'bg-cover.jpg', 'bg-p1.jpg', 'bg-p2.jpg', 'bg-p3.jpg', 'bg-p4.jpg', 'bg-p5.jpg', 'bg-p6.jpg',
-  'bg-p7.jpg', 'bg-p8.jpg', 'bg-p9.jpg', 'bg-p10.jpg', 'bg-p11.jpg', 'bg-p12.jpg',
-  'egg-night.png', 'egg-day.png', 'egg-cracked.png', 'hatched.png',
-  'feijoa-full.png', 'feijoa-hole.png', 'num-1.png', 'word-feijoa.png',
-  'tamarillo-full.png', 'tamarillo-hole.png', 'num-2.png', 'word-tamarillo.png',
-  'kiwi-full.png', 'kiwi-hole.png', 'num-3.png', 'word-kiwi.png',
-  'nectarine-full.png', 'nectarine-hole.png', 'num-4.png', 'word-nectarine.png',
-  'boysenberry-full.png', 'boysenberry-hole.png', 'num-5.png', 'word-boysenberry.png',
-  'food-lamington-full.png', 'food-lamington-hole.png', 'food-hokey-pokey-full.png', 'food-hokey-pokey-hole.png',
-  'food-pineapple-lump-full.png', 'food-pineapple-lump-hole.png', 'food-cheese-full.png', 'food-cheese-hole.png',
-  'food-pepperoni-full.png', 'food-pepperoni-hole.png', 'food-gummy-bear-full.png', 'food-gummy-bear-hole.png',
-  'food-mince-pie-full.png', 'food-mince-pie-hole.png', 'food-sausage-full.png', 'food-sausage-hole.png',
-  'food-muffin-full.png', 'food-muffin-hole.png', 'food-rockmelon-full.png', 'food-rockmelon-hole.png',
-  'cat-p8.png', 'cat-p9.png', 'cat-p10.png', 'leaf-full.png', 'leaf-hole.png',
-  'cocoon-p11.png', 'cocoon-p12.png', 'butterfly.png',
-  'arrow.png', 'arrow-cover.png', 'tap-hand.png', 'icon-192.png', 'icon-512.png'
-];
+importScripts('js/layout.js');
+
+const CACHE = 'feijoa-v4';
 const PRECACHE = [
-  './', './index.html', './css/style.css', './js/audio.js', './js/story.js', './js/app.js',
-  './manifest.webmanifest', ...IMG.map(f => './assets/img/' + f)
+  './', './index.html', './css/style.css',
+  './js/layout.js', './js/audio.js', './js/story.js', './js/app.js',
+  './manifest.webmanifest',
+  ...Object.values(LAYOUT.img).map(i => './assets/img/' + i.file),
+  ...Object.values(LAYOUT.captions).map(c => './assets/img/' + c.file),
+  ...Object.values(LAYOUT.audio).map(f => './assets/audio/' + f),
+  './assets/img/icon-192.png', './assets/img/icon-512.png'
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll([...new Set(PRECACHE)])));
   self.skipWaiting();
 });
 
@@ -39,16 +30,13 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // range requests (audio seeking) go straight to the network/cache API
   e.respondWith(
-    caches.match(e.request).then(hit => {
+    caches.match(e.request, { ignoreSearch: true }).then(hit => {
       if (hit) return hit;
       return fetch(e.request).then(res => {
         const url = new URL(e.request.url);
-        const cacheable =
-          url.origin === location.origin ||
-          url.hostname.endsWith('fonts.googleapis.com') ||
-          url.hostname.endsWith('fonts.gstatic.com');
-        if ((cacheable && res.ok) || res.type === 'opaque') {
+        if (url.origin === location.origin && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, copy));
         }

@@ -1,14 +1,15 @@
 /* ============================================================
-   story.js — page data for "A Feijoa on Monday"
+   story.js — page data for "A Feijoa on Monday" (v2)
 
-   All positions are in pixels of the original 3508 × 2480 art
-   sheets (A4 landscape at 300 dpi) and converted to percentages
-   with px(). Sprite rectangles come straight from the cut-out
-   pipeline in tools/, so they land exactly where they were drawn.
+   Hand-written narrative and interaction. Every position comes
+   from the generated js/layout.js (measured off the designer's
+   3508 × 2480 sheets), referenced here by id — nothing is guessed.
    ============================================================ */
 
-const SCENE_W = 3508;
-const SCENE_H = 2480;
+const SCENE_W = LAYOUT.sheet.w;
+const SCENE_H = LAYOUT.sheet.h;
+const IMG = 'assets/img/';
+const AUD = 'assets/audio/';
 
 function px(x, y, w, h) {
   return {
@@ -18,43 +19,39 @@ function px(x, y, w, h) {
     height:(h / SCENE_H * 100) + '%'
   };
 }
-
-// fit a sprite of natural size (w × h) inside a box centred at (cx, cy)
-function fit(cx, cy, boxW, boxH, w, h) {
-  const s = Math.min(boxW / w, boxH / h);
-  return px(cx - w * s / 2, cy - h * s / 2, w * s, h * s);
+function rectOf(id) {
+  const r = LAYOUT.img[id];
+  if (!r || r.x === undefined) throw new Error('layout has no rectangle for ' + id);
+  return px(r.x, r.y, r.w, r.h);
 }
+// fit a sprite of natural size inside a box centred at (cx, cy) — only for the Saturday
+// treats, which come on a contact sheet rather than in their page positions
+function fitOf(id, cx, cy, boxW, boxH) {
+  const r = LAYOUT.img[id];
+  const s = Math.min(boxW / r.w, boxH / r.h);
+  return px(cx - r.w * s / 2, cy - r.h * s / 2, r.w * s, r.h * s);
+}
+// the standalone bundle (tools/bundle.ps1) defines window.BUNDLE_ASSETS, mapping each path to a data: URI
+const asset = (path) => (window.BUNDLE_ASSETS && window.BUNDLE_ASSETS[path]) || path;
+const src = (id) => asset(IMG + LAYOUT.img[id].file);
+const audio = (id) => asset(AUD + LAYOUT.audio[id]);
 
-const IMG = 'assets/img/';
+/* ---------- page builders ---------- */
 
-function fruitPage(n, name, bg, opts) {
+function fruitPage(n, name, pageId, opts) {
   return {
-    id: name,
-    bg: IMG + bg,
-    atmosphere: opts.atmosphere || null,
-    text: opts.text,
-    camera: opts.camera || { scale: 1.04, origin: '50% 60%' },
-    after: [],
+    id: pageId,
+    bg: 'bg-' + pageId,
+    caption: [pageId],
+    narration: pageId + '-narration',
     objects: [
       {
-        id: 'fruit',
-        img: IMG + name + '-full.png',
-        rect: opts.fruitRect,
-        tap: { type: 'bite', mask: IMG + name + '-hole.png', cells: opts.cells,
-               say: opts.say, crumbColor: opts.crumb, sparkColor: '#fff3b0' }
+        id: 'fruit', layout: 'fruit-' + name,
+        tap: { type: 'bite', mask: 'fruit-' + name + '-hole', cells: LAYOUT.holes['fruit-' + name],
+               say: pageId + '-word', crumbColor: opts.crumb, sparkColor: '#fff3b0' }
       },
-      {
-        id: 'number',
-        img: IMG + 'num-' + n + '.png',
-        rect: opts.numRect,
-        tap: { type: 'say', text: opts.numWord, sparkColor: '#d2e26a' }
-      },
-      {
-        id: 'word',
-        img: IMG + 'word-' + name + '.png',
-        rect: opts.wordRect,
-        tap: { type: 'say', text: opts.say, sparkColor: '#d2e26a' }
-      }
+      { id: 'number', layout: 'num-' + n,      tap: { type: 'say', say: pageId + '-number', sparkColor: '#d2e26a' } },
+      { id: 'word',   layout: 'word-' + name,  tap: { type: 'say', say: pageId + '-word',   sparkColor: '#d2e26a' } }
     ],
     hotspots: [
       // the caterpillar painted into the scene — a little "yum" when tapped
@@ -64,29 +61,32 @@ function fruitPage(n, name, bg, opts) {
 }
 
 const FOODS = [
-  ['lamington',      'lamington',        591, 427, '#8a5a2b'],
-  ['hokey-pokey',    'hokey pokey',      349, 531, '#d8b27a'],
-  ['pineapple-lump', 'pineapple lump',   649, 247, '#5a3a1a'],
-  ['cheese',         'cheese',           452, 486, '#e2a01f'],
-  ['pepperoni',      'pepperoni',        534, 427, '#d98a8a'],
-  ['gummy-bear',     'gummy bear',       343, 511, '#e0443a'],
-  ['mince-pie',      'mince pie',        554, 371, '#b78a4a'],
-  ['sausage',        'sausage',          447, 231, '#b8461e'],
-  ['muffin',         'blueberry muffin', 449, 406, '#4a3a9a'],
-  ['rockmelon',      'rock melon',       465, 413, '#e08a2a']
+  ['lamington',      '#8a5a2b'],
+  ['hokey-pokey',    '#d8b27a'],
+  ['pineapple-lump', '#5a3a1a'],
+  ['cheese',         '#e2a01f'],
+  ['pepperoni',      '#d98a8a'],
+  ['gummy-bear',     '#e0443a'],
+  ['mince-pie',      '#b78a4a'],
+  ['sausage',        '#b8461e'],
+  ['muffin',         '#4a3a9a'],
+  ['rockmelon',      '#e08a2a']
 ];
 
+// The treats sit in two rows: above the caption panel and below the caterpillar,
+// clear of both arrows. The caption (y 482–1061) and the caterpillar (y 895–1377)
+// occupy the middle of the page.
 function saturdayFoods() {
   const xs = [370, 1064, 1754, 2444, 3138];
-  return FOODS.map(([id, say, w, h, crumb], i) => {
+  return FOODS.map(([id, crumb], i) => {
     const row = i < 5 ? 0 : 1;
     const cx = xs[i % 5];
-    const cy = row === 0 ? 540 : 1740;
+    const cy = row === 0 ? 250 : 1720;
     return {
-      id: 'food-' + id,
-      img: IMG + 'food-' + id + '-full.png',
-      rect: fit(cx, cy, 600, row === 0 ? 480 : 500, w, h),
-      tap: { type: 'bite', mask: IMG + 'food-' + id + '-hole.png', say, crumbColor: crumb, sparkColor: '#fff3b0' }
+      id: 'food-' + id, layout: 'food-' + id,
+      rect: fitOf('food-' + id, cx, cy, 600, row === 0 ? 390 : 540),
+      tap: { type: 'bite', mask: 'food-' + id + '-hole', cells: LAYOUT.holes['food-' + id],
+             say: 'p08-food-' + id, crumbColor: crumb, sparkColor: '#fff3b0' }
     };
   });
 }
@@ -95,47 +95,33 @@ const STORY = {
 
   title: 'A Feijoa on Monday',
 
+  cover: {
+    bg: 'bg-cover',
+    narration: 'cover-narration',
+    arrow: 'cover-arrow',        // the designer's Start arrow, placed where drawn
+    hand: 'cover-point'          // where the designer put the pointing hand
+  },
+
   pages: [
 
     /* ---------------- 1 · The egg (night) ---------------- */
     {
-      id: 'egg-night',
-      bg: IMG + 'bg-p1.jpg',
-      atmosphere: { type: 'night' },
-      text: 'In the light of the moon, a little egg lay on a leaf.',
-      camera: { scale: 1.22, origin: '38% 52%' },
+      id: 'p01', bg: 'bg-p01', caption: ['p01'], narration: 'p01-narration',
       objects: [
-        {
-          id: 'egg',
-          img: IMG + 'egg-night.png',
-          rect: px(1175, 1103, 237, 342),
-          tap: { type: 'shake', sound: 'bounce', sparkColor: '#cfe8ff' }
-        }
+        { id: 'egg', layout: 'egg-p01', tap: { type: 'shake', sound: 'bounce', sparkColor: '#cfe8ff' } }
       ],
       hotspots: [
         { rect: px(1680, 236, 508, 481), sound: 'shimmer', sparkColor: '#fff3b0' }   // the moon
       ]
     },
 
-    /* ---------------- 2 · Pop! (sunrise) ---------------- */
+    /* ---------------- 2 · Pop! ---------------- */
     {
-      id: 'hatching',
-      bg: IMG + 'bg-p2.jpg',
-      crossfade: true,
-      atmosphere: { type: 'day', sun: [51, 23.3], clouds: false },
-      text: 'One Sunday morning the warm sun came up and — pop! — out of the egg came a tiny and very hungry caterpillar.',
-      afterText: 'He started to look for some food.',
-      camera: { scale: 1.45, origin: '52% 58%' },
-      cameraAfter: { scale: 1.05, origin: '55% 55%' },
+      id: 'p02', bg: 'bg-p02', caption: ['p02'], narration: 'p02-narration',
       objects: [
-        {
-          id: 'egg',
-          img: IMG + 'egg-day.png',
-          rect: px(1618, 1149, 430, 571),
-          tap: { type: 'hatch', cracked: 'cracked', hatched: 'hatched' }
-        },
-        { id: 'cracked', img: IMG + 'egg-cracked.png', rect: px(1611, 1142, 443, 583), hidden: true },
-        { id: 'hatched', img: IMG + 'hatched.png',     rect: px(1615, 1299, 1028, 435), hidden: true }
+        { id: 'egg',     layout: 'egg-p02', tap: { type: 'hatch', cracked: 'cracked', hatched: 'hatched' } },
+        { id: 'cracked', layout: 'egg-cracked-p02', hidden: true },
+        { id: 'hatched', layout: 'hatched-p02',     hidden: true }
       ],
       hotspots: [
         { rect: px(0, 560, 980, 770),    sound: 'chirp',   sparkColor: '#ffd1c1' },   // fantail
@@ -143,139 +129,50 @@ const STORY = {
       ]
     },
 
-    /* ---------------- 3 · Monday · one feijoa ---------------- */
-    fruitPage(1, 'feijoa', 'bg-p3.jpg', {
-      atmosphere: { type: 'day', sun: [45.8, 18.7], clouds: false },
-      text: 'On Monday he ate through one feijoa. But he was still hungry.',
-      fruitRect: px(2310, 648, 383, 655),
-      cells: null,
-      say: 'feijoa', numWord: 'one', crumb: '#2d7a1f',
-      numRect: px(405, 245, 412, 742),
-      wordRect: px(2561, 161, 822, 292)
-    }),
-
-    /* ---------------- 4 · Tuesday · two tamarillos ---------------- */
-    fruitPage(2, 'tamarillo', 'bg-p4.jpg', {
-      text: 'On Tuesday he ate through two tamarillos, but he was still hungry.',
-      fruitRect: px(2241, 487, 721, 764),
-      cells: [[23.6, 72.5], [77.5, 72.5]],
-      say: 'tamarillo', numWord: 'two', crumb: '#5a2510',
-      numRect: px(339, 333, 431, 728),
-      wordRect: px(2061, 139, 1274, 231)
-    }),
-
-    /* ---------------- 5 · Wednesday · three kiwifruit ---------------- */
-    fruitPage(3, 'kiwi', 'bg-p5.jpg', {
-      text: 'On Wednesday he ate through three kiwifruit, but he was still hungry.',
-      fruitRect: px(1920, 757, 1367, 552),
-      cells: [[17.8, 51.1], [49.7, 52.3], [83.3, 48.8]],
-      say: 'kiwifruit', numWord: 'three', crumb: '#7a6a2a',
-      numRect: px(263, 91, 459, 747),
-      wordRect: px(2353, 155, 595, 230)
-    }),
-
-    /* ---------------- 6 · Thursday · four nectarines ---------------- */
-    fruitPage(4, 'nectarine', 'bg-p6.jpg', {
-      text: 'On Thursday he ate through four nectarines, but he was still hungry.',
-      fruitRect: px(1636, 754, 1854, 528),
-      cells: [[15.2, 58.1], [40.3, 55.7], [64.2, 59.5], [89.0, 55.8]],
-      say: 'nectarine', numWord: 'four', crumb: '#c25a1a',
-      numRect: px(321, 145, 440, 732),
-      wordRect: px(1958, 165, 1269, 232)
-    }),
-
-    /* ---------------- 7 · Friday · five boysenberries ---------------- */
-    fruitPage(5, 'boysenberry', 'bg-p7.jpg', {
-      text: 'On Friday he ate through five boysenberries, but he was still hungry.',
-      fruitRect: px(1774, 483, 1606, 809),
-      cells: [[10.0, 36.9], [26.4, 82.7], [46.4, 36.8], [68.5, 83.3], [90.6, 38.5]],
-      say: 'boysenberry', numWord: 'five', crumb: '#5a1a4a',
-      numRect: px(299, 48, 419, 733),
-      wordRect: px(1779, 154, 1600, 275)
-    }),
+    /* ---------------- 3–7 · one fruit a day ---------------- */
+    fruitPage(1, 'feijoa',      'p03', { crumb: '#2d7a1f' }),
+    fruitPage(2, 'tamarillo',   'p04', { crumb: '#5a2510' }),
+    fruitPage(3, 'kiwi',        'p05', { crumb: '#7a6a2a' }),
+    fruitPage(4, 'nectarine',   'p06', { crumb: '#c25a1a' }),
+    fruitPage(5, 'boysenberry', 'p07', { crumb: '#5a1a4a' }),
 
     /* ---------------- 8 · Saturday · the big feast ---------------- */
     {
-      id: 'saturday',
-      bg: IMG + 'bg-p8.jpg',
-      atmosphere: { type: 'sky' },
-      text: 'On Saturday he ate through one piece of lamington, one hokey pokey cone, one pineapple lump, one slice of cheddar cheese, one slice of pepperoni, one gummy bear, one piece of mince pie, one cocktail sausage, one blueberry muffin, and one slice of rock melon.',
-      afterText: 'That night he had a stomachache!',
-      camera: { scale: 1, origin: '50% 50%' },
-      after: [{ target: 'cat', anim: 'queasy', sound: 'gurgle' }],
+      id: 'p08', bg: 'bg-p08', caption: ['p08a', 'p08b'], narration: 'p08-narration',
+      // when the recording reaches "That night he had a stomachache!" (word 43) the caterpillar turns queasy
+      events: [{ word: 43, target: 'cat', anim: 'queasy', sound: 'gurgle' }],
       objects: [
-        {
-          id: 'cat',
-          img: IMG + 'cat-p8.png',
-          rect: px(1162, 889, 1008, 494),
-          breathe: true,
-          tap: { type: 'wiggle', sound: 'boing', sparkColor: '#ffe98a' }
-        },
+        { id: 'cat', layout: 'cat-p08', breathe: true, tap: { type: 'wiggle', sound: 'boing', sparkColor: '#ffe98a' } },
         ...saturdayFoods()
       ]
     },
 
     /* ---------------- 9 · Sunday · the swan plant leaf ---------------- */
     {
-      id: 'leaf',
-      bg: IMG + 'bg-p9.jpg',
-      atmosphere: { type: 'sky' },
-      text: 'The next day was Sunday again. The caterpillar ate through one nice swan plant leaf, and after that he felt much better.',
-      camera: { scale: 1.04, origin: '50% 62%' },
+      id: 'p09', bg: 'bg-p09', caption: ['p09'], narration: 'p09-narration',
       after: [{ target: 'cat', anim: 'happy', sound: 'yum', sparkle: '#ffe98a' }],
       objects: [
-        {
-          id: 'leaf',
-          img: IMG + 'leaf-full.png',
-          rect: px(0, 1089, 3390, 986),
-          z: 1,
-          tap: { type: 'bite', mask: IMG + 'leaf-hole.png', crumbColor: '#3f7a2a', sparkColor: '#d6ffb0' }
-        },
-        {
-          id: 'cat',
-          img: IMG + 'cat-p9.png',
-          rect: px(1508, 1124, 950, 656),
-          z: 2,
-          breathe: true,
-          tap: { type: 'wiggle', sound: 'boing', sparkColor: '#ffe98a' }
-        }
+        // the whole leaf is painted into the background; tapping it fades in the designer's bitten leaf
+        { id: 'leaf', layout: 'leaf-bitten-p09', z: 1, reveal: true,
+          tap: { type: 'reveal', sound: 'munch', crumbColor: '#3f7a2a', sparkColor: '#d6ffb0' } },
+        { id: 'cat',  layout: 'cat-p09', z: 2, breathe: true, tap: { type: 'wiggle', sound: 'boing', sparkColor: '#ffe98a' } }
       ]
     },
 
     /* ---------------- 10 · A big, fat caterpillar ---------------- */
     {
-      id: 'big',
-      bg: IMG + 'bg-p10.jpg',
-      atmosphere: { type: 'sky' },
-      text: 'Now he wasn’t hungry anymore — and he wasn’t a little caterpillar anymore. He was a big, fat caterpillar!',
-      camera: { scale: 1, origin: '50% 50%' },
+      id: 'p10', bg: 'bg-p10', caption: ['p10'], narration: 'p10-narration',
       objects: [
-        {
-          id: 'cat',
-          img: IMG + 'cat-p10.png',
-          rect: px(910, 363, 1920, 1514),
-          origin: '50% 70%',
-          breathe: true,
-          tap: { type: 'grow' }
-        }
+        { id: 'cat', layout: 'cat-p10', origin: '50% 70%', breathe: true, tap: { type: 'grow' } }
       ]
     },
 
     /* ---------------- 11 · The cocoon ---------------- */
     {
-      id: 'cocoon',
-      bg: IMG + 'bg-p11.jpg',
-      atmosphere: { type: 'sky' },
-      text: 'He built a small house, called a cocoon, around himself. He stayed inside for more than two weeks.',
-      camera: { scale: 1.08, origin: '65% 45%' },
+      id: 'p11', bg: 'bg-p11', caption: ['p11'], narration: 'p11-narration',
       objects: [
-        {
-          id: 'cocoon',
-          img: IMG + 'cocoon-p11.png',
-          rect: px(2038, 700, 492, 763),
-          origin: '50% 0%',
-          tap: { type: 'sway' }
-        }
+        { id: 'branch', layout: 'branch-p11', z: 1 },
+        { id: 'cocoon', layout: 'cocoon-p11', z: 2, origin: '50% 0%', tap: { type: 'sway' } }
       ],
       hotspots: [
         { rect: px(0, 0, 580, 1050), sound: 'shimmer', sparkColor: '#ffe98a' }   // kōwhai flowers
@@ -283,21 +180,19 @@ const STORY = {
     },
 
     /* ---------------- 12 · A beautiful monarch butterfly ---------------- */
-    {
-      id: 'butterfly',
-      bg: IMG + 'bg-p12.jpg',
-      atmosphere: { type: 'sky' },
-      text: 'Then he nibbled a hole in the cocoon, pushed his way out, and… he was a beautiful monarch butterfly!',
-      camera: { scale: 1, origin: '50% 50%' },
+    LAYOUT.flags.p12Layered ? {
+      id: 'p12', bg: 'bg-p12', caption: ['p12'], narration: 'p12-narration',
       objects: [
-        {
-          id: 'cocoon',
-          img: IMG + 'cocoon-p12.png',
-          rect: px(100, 1100, 468, 854),
-          origin: '50% 0%',
-          tap: { type: 'emerge', butterfly: 'butterfly' }
-        },
-        { id: 'butterfly', img: IMG + 'butterfly.png', rect: px(1140, 772, 1374, 878), hidden: true, z: 3 }
+        { id: 'branch',    layout: 'branch-p12', z: 1 },
+        { id: 'cocoon',    layout: 'cocoon-p12', z: 2, origin: '50% 0%', tap: { type: 'emerge', butterfly: 'butterfly' } },
+        { id: 'butterfly', layout: 'butterfly-p12', hidden: true, z: 3 }
+      ]
+    } : {
+      // fallback if the page 12 sheet was not a flat sky: the cocoon stays painted in the background
+      id: 'p12', bg: 'bg-p12', caption: ['p12'], narration: 'p12-narration',
+      objects: [
+        { id: 'cocoon',    rect: px(137, 1155, 374, 799), tap: { type: 'emerge', butterfly: 'butterfly', keep: true } },
+        { id: 'butterfly', layout: 'butterfly-p12', hidden: true, z: 3 }
       ]
     }
   ]

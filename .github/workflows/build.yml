@@ -1,0 +1,109 @@
+# Build, verify, deploy and release "A Feijoa on Monday".
+#
+#   pull request   → bundle + self-test; the two downloadable books are attached to the run
+#   push to main   → the same, then deploy to GitHub Pages and refresh the rolling "latest" release
+#   manual run     → same as a push to main
+#
+# The artwork pipeline (tools/build-assets.ps1) is Windows-only and runs locally; its outputs
+# (assets/, js/layout.js) are committed. CI only bundles, verifies, deploys and releases.
+
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bundle the standalone book
+        run: pwsh tools/bundle.ps1
+
+      - name: Self-test the site and the bundle (headless Chrome, from file://)
+        run: |
+          set -e
+          check () {
+            google-chrome --headless=new --disable-gpu --no-sandbox --hide-scrollbars \
+              --window-size=1400,1000 --virtual-time-budget=120000 --dump-dom "$1" > "$2" 2>/dev/null || true
+            echo "== $1"
+            sed -n 's/.*<pre id="test-report"[^>]*>//p' "$2" | sed 's/<\/pre>.*//' | head -60
+            grep -q '<title>TEST PASS</title>' "$2"
+          }
+          check "file://$PWD/index.html?selftest=1" site-selftest.txt
+          check "file://$PWD/dist/a-feijoa-on-monday.html?selftest=1" bundle-selftest.txt
+
+      - name: Attach the downloadable book to this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-feijoa-on-monday
+          path: |
+            dist/a-feijoa-on-monday.html
+            dist/a-feijoa-on-monday.zip
+          if-no-files-found: error
+
+      - name: Stage the site (authoring content excluded)
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p _site
+          rsync -a --exclude='_site' --exclude='dist' --exclude='content' --exclude='tools' \
+                --exclude='.git' --exclude='.github' --exclude='.claude' --exclude='CLAUDE.md' ./ _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: a-feijoa-on-monday
+          path: dist
+      - name: Refresh the rolling "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cat > notes.md <<'EOF'
+          **A Feijoa on Monday** — download `a-feijoa-on-monday.html` and double-click it. It opens in your web browser and works offline, on a laptop, tablet or phone. Turn the sound on and hold a phone sideways.
+
+          (`a-feijoa-on-monday.zip` is the same book as a folder — unzip it and open `index.html`. It opens a little faster.)
+          EOF
+          git tag -f latest
+          git push -f origin latest
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest --title "A Feijoa on Monday — latest" --notes-file notes.md --latest
+          else
+            gh release create latest --title "A Feijoa on Monday — latest" --notes-file notes.md --latest
+          fi
+          gh release upload latest dist/a-feijoa-on-monday.html dist/a-feijoa-on-monday.zip --clobber

@@ -11,9 +11,6 @@
 <link rel="apple-touch-icon" href="assets/img/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Patrick+Hand&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="on-cover">
@@ -21,22 +18,22 @@
 <div id="app">
   <div id="stage" aria-label="storybook stage">
 
-    <!-- The scene world: camera zoom is applied here -->
     <div id="world">
-      <img id="scene-a" class="scene" alt="">
-      <img id="scene-b" class="scene" alt="">
-      <div id="atmosphere"></div>
+      <img id="scene" class="scene" alt="">
       <div id="sprites"></div>
       <div id="fx"></div>
     </div>
 
-    <!-- Non-zooming stage chrome -->
-    <div id="vignette"></div>
-    <div id="hand" class="hidden" aria-hidden="true"><img src="assets/img/tap-hand.png" alt=""></div>
-    <div id="caption" class="hidden"><p id="caption-text"></p></div>
+    <!-- the designer's caption panels, placed where they were drawn, with word boxes overlaid -->
+    <div id="captions"></div>
 
-    <button id="arrow-btn" class="hidden" aria-label="Next page" disabled>
-      <img src="assets/img/arrow.png" alt="">
+    <div id="hand" class="hidden" aria-hidden="true"><img src="assets/img/tap-hand.png" alt=""></div>
+
+    <button id="arrow-back" class="nav hidden" aria-label="Previous page" disabled>
+      <img src="assets/img/arrow-back.png" alt="">
+    </button>
+    <button id="arrow-next" class="nav hidden" aria-label="Next page" disabled>
+      <img src="assets/img/arrow-next.png" alt="">
     </button>
 
     <button id="mute-btn" aria-label="Sound on or off" aria-pressed="false">
@@ -50,25 +47,36 @@
     <!-- Cover -->
     <div id="splash">
       <img id="splash-art" src="assets/img/bg-cover.jpg" alt="A Feijoa on Monday — an interactive storybook">
-      <button id="begin-btn" aria-label="Start the story"></button>
-      <img id="cover-arrow" src="assets/img/arrow-cover.png" alt="" aria-hidden="true">
+      <button id="begin-btn" aria-label="Start the story">
+        <img id="cover-arrow" src="assets/img/cover-arrow.png" alt="">
+      </button>
     </div>
 
     <!-- Ending -->
     <div id="ending" class="hidden">
       <div id="ending-card">
-        <img id="ending-butterfly" src="assets/img/butterfly.png" alt="">
+        <img id="ending-butterfly" src="assets/img/butterfly-p12.png" alt="">
         <h1>The End</h1>
         <button id="again-btn">Read it again</button>
       </div>
     </div>
 
     <div id="turner"></div>
+    <div id="timeline" class="hidden" aria-hidden="true"></div>
+  </div>
+
+  <!-- shown only on a phone held upright -->
+  <div id="rotate" aria-hidden="true">
+    <div id="rotate-card">
+      <div id="rotate-phone"></div>
+      <p>Turn your device sideways to read the book</p>
+    </div>
   </div>
 </div>
 
 <pre id="test-report" class="hidden"></pre>
 
+<script src="js/layout.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/story.js"></script>
 <script src="js/app.js"></script>
