@@ -473,3 +473,45 @@ pull request that breaks a page fails before review. The bundle is smoke-
 tested the same way — loaded from `file://` in headless Chrome with
 `?selftest=1` — which is the only way to catch a `fetch` sneaking in and
 breaking offline use. A build whose self-test fails produces no release.
+
+---
+
+## 14. Implementation notes (2026-09-18)
+
+Phases 1–9 are built and verified locally; nothing is committed. What
+differs from the plan above, and what to know before merging:
+
+- **Pipeline** — `tools/build-assets.ps1` runs in about a minute and
+  produces 85 images, 33 recordings and `js/layout.js` (18 KB). Word-box
+  detection matched the transcription on all 13 panels without a per-page
+  override. The audio analysis runs in headless Edge behind a tiny local
+  HTTP listener, because `--dump-dom` with a virtual-time budget cannot
+  wait for an asynchronous MP3 decode. `-SkipAudio` reuses the committed
+  timings for an image-only rebuild.
+- **Page 12** was measured flat (0 % off-colour), so the branch and cocoon
+  are lifted off and the cocoon can crack; `LAYOUT.flags.p12Layered` records
+  the decision and `story.js` carries the static fallback.
+- **Saturday treats** come on a 5 × 2 contact sheet, not in page positions,
+  so `story.js` lays them out in two rows: above the caption panel and below
+  the caterpillar, clear of both arrows.
+- **Overlaps in the designer's own placement**, left exactly as drawn:
+  page 3's panel sits over the top of the "Feijoa" word and the "1"; page 4's
+  panel clips the "Tamarillo" word; page 8's second panel covers the
+  caterpillar's antennae. Worth a look by the designer; the engine will
+  follow whatever positions the next sheets carry.
+- **Verification** — `tools/verify.ps1` (self-test + contact sheet + rotate
+  prompt) passes for the working tree and for the offline bundle from
+  `file://`. The self-test drives the narration as a silent 30× read-along,
+  so audio playback and sync are **not** verified by it — that needs a
+  person on a real device, ideally an iPad.
+- **Bundles** — `tools/bundle.ps1` writes `dist/a-feijoa-on-monday.html`
+  and `.zip`; the engine resolves every asset path through `asset()`, which
+  the bundle points at a `data:` URI map, so no `fetch` is involved anywhere.
+- **Workflow** — `.github/workflows/build.yml` replaces `deploy.yml`:
+  `build` (bundle, self-test site and bundle in headless Chrome, attach the
+  artifact `a-feijoa-on-monday`), then on `main` only `deploy` (Pages) and
+  `release` (moves the `latest` tag, edits or creates the release, uploads
+  both files). `build-single-file.py` is deleted.
+- **Phase 10** is yours: commit, open the pull request (the run attaches the
+  two downloads), merge, then `.\tools\verify.ps1 -Url <pages url>` and
+  download the release file and open it.

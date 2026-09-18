@@ -5,7 +5,7 @@ artifacts for the story, kept separate from the files that actually run the
 book (`index.html`, `css/`, `js/`, `assets/`).
 
 **This folder is intentionally excluded from the GitHub Pages build** (see
-`.github/workflows/deploy.yml`), so nothing here ever becomes a public URL.
+`.github/workflows/build.yml`), so nothing here ever becomes a public URL.
 It exists purely so artifacts and instructions can be dropped in and worked
 on without touching the live page.
 

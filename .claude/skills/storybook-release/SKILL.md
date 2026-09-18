@@ -44,14 +44,11 @@ This breaks silently and only when opened from disk, so always smoke-test
 the bundle itself, not just the site:
 
 ```powershell
-$edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
-Start-Process $edge -Wait -NoNewWindow -ArgumentList @(
-  '--headless=new','--disable-gpu','--no-first-run',
-  "--user-data-dir=`"$env:TEMP\edge-bundle`"",'--window-size=1400,1000',
-  '--virtual-time-budget=90000','--dump-dom',
-  '"file:///<repo>/dist/a-feijoa-on-monday.html?selftest=1"')
-# expect <title>TEST PASS</title>
+.\tools\verify.ps1 -Bundle -NoShots     # loads dist/a-feijoa-on-monday.html from file:// with ?selftest=1
 ```
+
+`tools/verify.ps1` prints the in-page report and ends with `VERIFY: PASS` or
+`VERIFY: FAIL`. CI runs the same check with headless Chrome on Linux.
 
 Also open it by hand once per release and listen — headless testing cannot
 tell you whether the recordings actually play or stay in sync.
@@ -71,7 +68,11 @@ tell you whether the recordings actually play or stay in sync.
 - A merge to `main` deploys to Pages and updates a rolling Release tagged
   `latest`, so the download link never changes.
 - The headless self-test runs in CI against both the site and the bundle. A
-  failing self-test produces no release.
+  failing self-test fails the `build` job, so nothing deploys and no release
+  is touched. Jobs: `build` (bundle, self-test, attach artifact
+  `a-feijoa-on-monday`, stage `_site`), `deploy` (Pages), `release` (moves the
+  `latest` tag, creates or edits the release, uploads both files with
+  `--clobber`).
 
 Repo settings: **Pages source must be "GitHub Actions"** (Settings → Pages),
 not "Deploy from a branch". Without it `configure-pages` fails with

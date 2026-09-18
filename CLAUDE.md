@@ -45,11 +45,16 @@ for the asset — don't invent a substitute.
 There is no test framework — verification is the in-page harness plus
 headless screenshots:
 
-- `index.html?selftest=1` walks the whole book, taps everything, and sets
-  the page title to `TEST PASS` / `TEST FAIL`.
-- `?page=N`, `?fast=1`, `?boxes=1` (word boxes), `?envelope=1` (audio
-  timings) are the debug switches.
-- Run both locally and against the deployed URL after every deploy.
+- `.\tools\verify.ps1` runs it all: `index.html?selftest=1` (walks the whole
+  book, taps everything, checks gating, back navigation, every image and
+  recording, sets the title to `TEST PASS` / `TEST FAIL`), a screenshot of
+  every screen into `tools/out/shots/` plus one `contact-sheet.jpg`, and the
+  portrait rotate prompt. `-Url <deployed url>` after a deploy, `-Bundle` for
+  the offline file, `-NoShots` for the self-test alone.
+- `?page=N`, `?fast=1`, `?boxes=1` (word boxes), `?envelope=1` (word
+  timeline with playhead), `?rotatecheck=1` are the debug switches.
+- Look at the contact sheet as well as the report: only eyes catch a sprite in
+  the wrong place. Audio sync cannot be verified headlessly — say so.
 
 This machine has no Node, Python, ImageMagick or ffmpeg. Image work is
 PowerShell + `tools/ImgTool.cs` (compiled on the fly with `Add-Type`);
@@ -62,9 +67,9 @@ Two things ship from every build: the live Pages site, and a standalone copy
 of the book that opens with no tools, no server and no internet.
 
 - `tools/build-assets.ps1` — artwork and audio → `assets/` + generated
-  `js/layout.js`. **Local only**: it uses `System.Drawing`, which is
-  Windows-only, so CI cannot run it. That is why built `assets/` are
-  committed.
+  `js/layout.js` (`-SkipAudio` reuses the committed timings for a quick
+  image-only rebuild). **Local only**: it uses `System.Drawing` and headless
+  Edge, so CI cannot run it. That is why built `assets/` are committed.
 - `tools/bundle.ps1` — the site → `dist/a-feijoa-on-monday.html` (everything
   inlined) and `dist/a-feijoa-on-monday.zip`. PowerShell so it runs both
   locally and on the Linux runner via `pwsh`.

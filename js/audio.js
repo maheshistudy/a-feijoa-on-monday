@@ -1,13 +1,18 @@
 /* ============================================================
    audio.js — synthesized sound effects (no audio files needed)
-   All sounds are built from oscillators + filtered noise, tuned
-   to be soft and playful for small ears.
+   Tap feedback only: soft and playful, at reduced volume, and
+   ducked further while the recorded narration is playing so the
+   child's voice always wins.
    ============================================================ */
 
 const Sfx = (() => {
   let ctx = null;
   let master = null;
   let muted = false;
+  let ducked = false;
+  const BASE = 0.3, DUCK = 0.09;
+
+  function level() { return muted ? 0 : (ducked ? DUCK : BASE); }
 
   function ensure() {
     if (!ctx) {
@@ -15,7 +20,7 @@ const Sfx = (() => {
       if (!AC) return null;
       ctx = new AC();
       master = ctx.createGain();
-      master.gain.value = muted ? 0 : 0.5;
+      master.gain.value = level();
       master.connect(ctx.destination);
     }
     if (ctx.state === 'suspended') ctx.resume();
@@ -68,7 +73,6 @@ const Sfx = (() => {
     [1240, 1660, 2090, 2480].forEach((f, i) => osc('sine', f, t + i * 0.045, 0.22, 0.1, f * 1.15));
   }
 
-  // soft rubbery egg wobble
   function wobble(intensity = 1) {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -85,7 +89,6 @@ const Sfx = (() => {
     lfo.start(t); lfo.stop(t + 0.6);
   }
 
-  // little rubber-ball bounce
   function bounce() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -93,7 +96,6 @@ const Sfx = (() => {
     osc('sine', 420, t + 0.16, 0.1, 0.18, 220);
   }
 
-  // POP! crack — noise snap + pitch drop
   function crackPop() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -110,7 +112,6 @@ const Sfx = (() => {
     noiseBurst(t, 0.04, 0.2, 2500, 'highpass');
   }
 
-  // springy boing for hatching / landing
   function boing() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -125,7 +126,6 @@ const Sfx = (() => {
     o.start(t); o.stop(t + 0.55);
   }
 
-  // moon / sun shimmer
   function shimmer() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -133,7 +133,6 @@ const Sfx = (() => {
     noiseBurst(t, 0.7, 0.05, 6000, 'highpass');
   }
 
-  // page turn
   function whoosh() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -154,7 +153,6 @@ const Sfx = (() => {
     src.start(t); src.stop(t + 0.7);
   }
 
-  // arrow-ready ding
   function chime() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -163,7 +161,6 @@ const Sfx = (() => {
     osc('sine', 1760, t + 0.18, 0.6, 0.08, 1760);
   }
 
-  // munch — two crunchy bites, pitch varies a little each time
   function munch() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -174,7 +171,6 @@ const Sfx = (() => {
     osc('triangle', 180 * v, t + 0.12, 0.08, 0.16, 100);
   }
 
-  // yum! — cheerful rising two-note
   function yum() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -182,7 +178,6 @@ const Sfx = (() => {
     osc('sine', 780, t + 0.14, 0.32, 0.2, 990);
   }
 
-  // fantail — quick bright chirps
   function chirp() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -191,7 +186,6 @@ const Sfx = (() => {
     pattern.forEach(([d, f0, f1, dur]) => osc('sine', f0, t + d, dur, 0.09, f1));
   }
 
-  // tummy gurgle
   function gurgle() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -203,7 +197,6 @@ const Sfx = (() => {
     osc('triangle', 90, t + 0.8, 0.35, 0.15, 60);
   }
 
-  // hush — soft breathy sigh for the cocoon
   function hush() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -212,7 +205,6 @@ const Sfx = (() => {
     osc('sine', 262, t + 0.6, 0.9, 0.05, 220);
   }
 
-  // rising slide — growing big
   function grow() {
     if (!ensure()) return;
     const t = ctx.currentTime;
@@ -221,27 +213,23 @@ const Sfx = (() => {
     [880, 1100, 1320].forEach((f, i) => osc('sine', f, t + 0.55 + i * 0.07, 0.35, 0.1, f));
   }
 
-  // wing flutter — rapid soft puffs
   function flutter(n = 6) {
     if (!ensure()) return;
     const t = ctx.currentTime;
     for (let i = 0; i < n; i++) noiseBurst(t + i * 0.09, 0.05, 0.12, 1800 - i * 60, 'bandpass', 0.6);
   }
 
-  // glitter — a run of tiny bells
   function glitter() {
     if (!ensure()) return;
     const t = ctx.currentTime;
     [1568, 1976, 2349, 2637, 3136, 2349, 3520].forEach((f, i) => osc('sine', f, t + i * 0.06, 0.28, 0.07, f * 1.02));
   }
 
-  function setMuted(m) {
-    muted = m;
-    if (master) master.gain.setTargetAtTime(m ? 0 : 0.5, ctx.currentTime, 0.02);
-  }
-
+  function apply() { if (master) master.gain.setTargetAtTime(level(), ctx.currentTime, 0.03); }
+  function setMuted(m) { muted = m; apply(); }
+  function setDucked(d) { ducked = d; apply(); }
   function unlock() { ensure(); }
 
   return { tap, sparkle, wobble, bounce, crackPop, pop, boing, shimmer, whoosh, chime,
-           munch, yum, chirp, gurgle, hush, grow, flutter, glitter, setMuted, unlock };
+           munch, yum, chirp, gurgle, hush, grow, flutter, glitter, setMuted, setDucked, unlock };
 })();

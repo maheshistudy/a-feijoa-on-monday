@@ -6,3 +6,5 @@ desktop.ini
 *.swp
 __pycache__/
 *.pyc
+tools/out/
+dist/
